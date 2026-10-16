@@ -14707,6 +14707,11 @@ cout &lt;&lt; ans.val() &lt;&lt; endl; // 出力: 6 (0-1の選び方3通り × 1
                                 >
                             </li>  
                             <li>
+                                <a href="#cartesian-tree"
+                                    >Cartesian Tree</a
+                                >
+                            </li> 
+                            <li>
                                 <a href="#largest-rectangle-histogram"
                                     >ヒストグラムの最大長方形</a
                                 >
@@ -15982,6 +15987,130 @@ cout &lt;&lt; "Max Overlap: " &lt;&lt; res.max_overlap &lt;&lt; "\n"; // 出力:
                             <strong>注意:</strong>
                             追加する長方形の境界は <code>[l, r]</code>（閉区間）ではなく、<code>[l, r)</code>（半開区間）として扱われます（$l \le x \lt r$、$d \le y \lt u$）。点の被覆数ではなく「実際の空間の面積や長さ」を計算する仕様になっているため、長方形の幅 <code>r - l</code> と高さ <code>u - d</code> がそのまま評価されます。
                         </p>
+                    </div>
+
+<div class="function-note" id="cartesian-tree">
+                        <div class="function-header">
+                            <h3 class="function-name">Cartesian Tree</h3>
+                            <p class="function-purpose">
+                                <span class="label">用途:</span>
+                                区間最小値/最大値による配列の二分木化、ヒストグラム内の最大長方形、区間に関する木DP
+                            </p>
+                        </div>
+                        <p>
+                            <strong>計算量:</strong> 構築 O(N)。<br>
+                            配列を「最小値(最大値)で左右に分割する」という構造を、スタックを用いて線形時間で構築します。
+                        </p>
+
+                        <div
+                            class="code-block"
+                            data-custom-lines="true"
+                            aria-label="Code block"
+                        >
+                            <div class="code-toolbar">
+                                <span class="lang-label" aria-hidden="true"
+                                    >C++</span
+                                >
+                                <button
+                                    class="copy-btn"
+                                    type="button"
+                                    aria-label="Copy code"
+                                >
+                                    Copy
+                                </button>
+                            </div>
+                            <div class="code-wrap">
+                                <pre><code class="hljs language-c++" spellcheck="false">// Cartesian Tree の構造体
+struct CartesianTree {
+    ll root;             // 根となるインデックス
+    vector&lt;ll&gt; p;        // p[i] は i の親（親がない場合は -1）
+    vector&lt;ll&gt; l, r;     // l[i], r[i] はそれぞれ i の左の子、右の子（ない場合は -1）
+
+    // 構造体の初期化 O(N)
+    // is_min = true の場合: 区間の最小値が根になる（Min-Cartesian Tree）
+    // is_min = false の場合: 区間の最大値が根になる（Max-Cartesian Tree）
+    CartesianTree(const vector&lt;ll&gt;&amp; a, bool is_min = true) {
+        ll n = a.size();
+        p.assign(n, -1);
+        l.assign(n, -1);
+        r.assign(n, -1);
+        
+        vector&lt;ll&gt; st; // 右側のスパイン（根から右の子を辿ったパス）を管理するスタック
+        for (ll i = 0; i &lt; n; ++i) {
+            ll last = -1;
+            // Min木なら a[st.back()] > a[i] の間ポップ
+            // Max木なら a[st.back()] < a[i] の間ポップ
+            while (!st.empty() &amp;&amp; (is_min ? a[st.back()] &gt; a[i] : a[st.back()] &lt; a[i])) {
+                last = st.back();
+                st.pop_back();
+            }
+            if (!st.empty()) {
+                r[st.back()] = i;
+                p[i] = st.back();
+            }
+            if (last != -1) {
+                l[i] = last;
+                p[last] = i;
+            }
+            st.push_back(i);
+        }
+        root = st.empty() ? -1 : st[0];
+    }
+};</code></pre>
+                            </div>
+                        </div>
+
+                        <div
+                            class="template-collection"
+                            style="margin-top: 15px"
+                        >
+                            <h4
+                                style="
+                                    margin-bottom: 5px;
+                                    font-size: 0.95em;
+                                    color: #555;
+                                "
+                            >
+                                ▼ 使い方と応用パターン
+                            </h4>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    基本の使い方（最小値バージョン・最大値バージョン）
+                                </summary>
+                                <pre><code class="hljs language-c++">vector&lt;ll&gt; A = {9, 3, 7, 1, 8, 12, 10, 20, 15, 18, 5};
+
+// 1. Min-Cartesian Tree (デフォルト)
+CartesianTree min_ct(A); // または CartesianTree min_ct(A, true);
+cout &lt;&lt; "Min Tree Root: " &lt;&lt; min_ct.root &lt;&lt; endl; // 1 (A[3] = 1 なのでインデックス3が根)
+cout &lt;&lt; "Left child of root: " &lt;&lt; min_ct.l[min_ct.root] &lt;&lt; endl; // 3より左の最小値のインデックス
+
+// 2. Max-Cartesian Tree
+CartesianTree max_ct(A, false);
+cout &lt;&lt; "Max Tree Root: " &lt;&lt; max_ct.root &lt;&lt; endl; // 20 (A[7] = 20 なのでインデックス7が根)</code></pre>
+                            </details>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    Tree DP (木DP) への応用例の骨組み
+                                </summary>
+                                <pre><code class="hljs language-c++">vector&lt;ll&gt; A = { ... };
+CartesianTree ct(A);
+
+// DFSで部分木（＝ある最小値を分割点としたときの区間）に関する情報を計算する
+auto dfs = [&amp;](auto&amp; dfs, ll v) -&gt; ll {
+    if (v == -1) return 0;
+    
+    ll left_val = dfs(dfs, ct.l[v]);
+    ll right_val = dfs(dfs, ct.r[v]);
+    
+    // v を根とする部分木（元の配列でのある連続区間に対応）の答えをマージ
+    return left_val + right_val + A[v]; 
+};
+
+ll ans = dfs(dfs, ct.root);</code></pre>
+                            </details>
+                        </div>
                     </div>
                     
 <div class="function-note" id="largest-rectangle-histogram">
