@@ -503,7 +503,9 @@ cin &gt;&gt; d;</code></pre>
                             </li>
                             <li><a href="#suffix-tree">Suffix Tree</a></li>
                             <li><a href="#trie-tree">Trie Tree</a></li>
-                        </ul>
+                            <li><a href="#trie-tree-sequence">Trie Tree (数列)</a></li>
+                            
+                            <li><a href="#binary-trie">Binary Trie</a></li>
                     </nav>
 
                     <div class="function-note" id="stoi">
@@ -1668,7 +1670,7 @@ int dp_root = dfs.run(0);</code></pre>
                         </div>
                     </div>
 
-                    <div class="function-note" id="trie-tree">
+<div class="function-note" id="trie-tree">
                         <div class="function-header">
                             <h3 class="function-name">
                                 Trie Tree (Prefix Tree)
@@ -1679,9 +1681,9 @@ int dp_root = dfs.run(0);</code></pre>
                             </p>
                         </div>
                         <p>
-                            <strong>計算量:</strong> 挿入・検索ともに O(|S|)
+                            <strong>計算量:</strong> 挿入・検索・削除・LCP取得など 基本操作はすべて O(|S|)
                             （|S| は文字列の長さ）。<br />
-                            文字列の追加順(ID)や、ノードごとの任意の重み・関数値を持てるように設計された汎用実戦モデル。
+                            競技プログラミング等の本番で要求されやすい「特定文字列の正確な削除」「辞書順k番目の取得」を追加し、内部構造の拡張性も確保。
                         </p>
                         <div
                             class="code-block"
@@ -1701,20 +1703,14 @@ int dp_root = dfs.run(0);</code></pre>
                                 </button>
                             </div>
                             <div class="code-wrap">
-                                <pre><code class="hljs language-c++" spellcheck="false">#include &lt;vector&gt;
-#include &lt;string&gt;
-#include &lt;algorithm&gt;
-
-using namespace std;
-
-// char_size: 文字の種類数 (英小文字のみなら26)
+                                <pre><code class="hljs language-c++" spellcheck="false">// char_size: 文字の種類数 (英小文字のみなら26)
 // base: 基準となる文字 ('a', 'A', '0' など)
 template &lt;int char_size = 26, int base = 'a'&gt;
 struct Trie {
   struct Node {
-    vector&lt;int&gt; next;       // 子ノードのインデックス
-    int accept_count;       // このノードで終わる文字列の数
-    int pass_count;         // このノードを通過した文字列の数
+    vector&lt;int&gt; next;       // 子ノードのインデックス (-1は子が存在しない)
+    int accept_count;       // このノードを「終端」とする文字列の数
+    int pass_count;         // このノードを「通過」した文字列の数 (部分木の要素数)
     
     // --- 汎用拡張データ ---
     vector&lt;int&gt; accept_ids; // このノードで終わる文字列のラベル(追加時のIDなど)
@@ -1729,7 +1725,12 @@ struct Trie {
     nodes.push_back(Node()); // root (id = 0) を追加
   }
 
-  // 文字列の挿入 (同時にIDや関数の値を登録できる)
+  // 現在のTrie木に含まれる全文字列の数を取得 O(1)
+  int size() const {
+    return nodes[0].pass_count;
+  }
+
+  // 文字列の挿入
   void insert(const string &amp;s, int id = -1, long long val = 0) {
     int curr = 0;
     nodes[curr].pass_count++;
@@ -1744,10 +1745,40 @@ struct Trie {
     }
     nodes[curr].accept_count++;
     if (id != -1) nodes[curr].accept_ids.push_back(id);
-    nodes[curr].val += val; // 用途に応じて +=, max(), = などに変更可能
+    nodes[curr].val += val; 
   }
 
-  // 文字列の完全一致検索 (見つかれば終端ノードのIDを、なければ -1 を返す)
+  // 単一文字列の正確な削除 (集合からsを1つだけ減らす)
+  // 成功したらtrue, そもそも存在しなかったらfalseを返す
+  bool erase(const string &amp;s) {
+    int curr = 0;
+    vector&lt;int&gt; path;
+    for (char c : s) {
+      path.push_back(curr);
+      int to = c - base;
+      if (nodes[curr].next[to] == -1) return false; // 存在しない
+      curr = nodes[curr].next[to];
+    }
+    if (nodes[curr].accept_count == 0) return false; // 終端として存在しない
+    
+    nodes[curr].accept_count--;
+    nodes[curr].pass_count--;
+    for (int p : path) nodes[p].pass_count--; // 祖先の通過数を減らす
+    return true;
+  }
+
+  // 完全一致する文字列の個数を取得
+  int count(const string &amp;s) {
+    int curr = 0;
+    for (char c : s) {
+      int to = c - base;
+      if (nodes[curr].next[to] == -1) return 0;
+      curr = nodes[curr].next[to];
+    }
+    return nodes[curr].accept_count;
+  }
+
+  // 終端ノードのID検索 (見つかれば終端ノードのIDを、なければ -1)
   int search(const string &amp;s) {
     int curr = 0;
     for (char c : s) {
@@ -1768,6 +1799,78 @@ struct Trie {
     }
     return nodes[curr].pass_count;
   }
+
+  // 特定の文字列をprefixに持つ要素を全て削除する
+  void erase_by_prefix(const string &amp;s) {
+    if (s.empty()) { 
+      nodes[0] = Node(); // 空文字列指定は全クリアと同義
+      return;
+    }
+    int curr = 0;
+    vector&lt;int&gt; path;
+    for (char c : s) {
+      path.push_back(curr);
+      int to = c - base;
+      if (nodes[curr].next[to] == -1) return; // 存在しない
+      curr = nodes[curr].next[to];
+    }
+    int removed = nodes[curr].pass_count;
+    if (removed == 0) return;
+    
+    nodes[path.back()].next[s.back() - base] = -1; // 木から切断
+    for (int p : path) nodes[p].pass_count -= removed;
+  }
+
+  // sがprefixとなるような、木内の文字列の「総数」ではなく
+  // 「sのprefixとなるような木内の文字列」の個数 (s="catch"なら"cat", "catch"等)
+  int count_prefixes_of(const string &amp;s) {
+    int curr = 0, res = 0;
+    for (char c : s) {
+      res += nodes[curr].accept_count;
+      int to = c - base;
+      if (nodes[curr].next[to] == -1) return res;
+      curr = nodes[curr].next[to];
+    }
+    res += nodes[curr].accept_count;
+    return res;
+  }
+
+  // 最長共通接頭辞 (LCP) のマッチ長取得
+  // 木に含まれるいずれかの文字列と、sが先頭から何文字一致するか
+  int get_lcp_length(const string &amp;s) {
+    int curr = 0, len = 0;
+    for (char c : s) {
+      int to = c - base;
+      if (nodes[curr].next[to] == -1) break;
+      curr = nodes[curr].next[to];
+      len++;
+    }
+    return len;
+  }
+
+  // 辞書順で k 番目 (1-indexed) の文字列を取得
+  // k が要素数を超える、または k &lt;= 0 の場合は空文字列を返す
+  string kth_element(int k) {
+    if (k &lt;= 0 || k &gt; nodes[0].pass_count) return "";
+    int curr = 0;
+    string res = "";
+    while (true) {
+      if (k &lt;= nodes[curr].accept_count) return res;
+      k -= nodes[curr].accept_count;
+      for (int i = 0; i &lt; char_size; i++) {
+        int nxt = nodes[curr].next[i];
+        if (nxt != -1) {
+          if (k &lt;= nodes[nxt].pass_count) {
+            res += (char)(base + i);
+            curr = nxt;
+            break;
+          } else {
+            k -= nodes[nxt].pass_count;
+          }
+        }
+      }
+    }
+  }
 };</code></pre>
                             </div>
                         </div>
@@ -1775,83 +1878,13 @@ struct Trie {
                             class="automaton-variables-note"
                             style="line-height: 1.6; color: #333"
                         >
-                            <strong>【Trieを構成する構造と変数】</strong><br />
-                            ・<code
-                                style="
-                                    background: #f4f4f4;
-                                    padding: 2px 4px;
-                                    border-radius: 4px;
-                                "
-                                >nodes</code
-                            >
-                            : ツリーを構成する全ノードの配列。インデックス
-                            <code
-                                style="
-                                    background: #f4f4f4;
-                                    padding: 2px 4px;
-                                    border-radius: 4px;
-                                "
-                                >0</code
-                            >
-                            が根(Root)になります。<br /><br />
-                            <strong>【各Nodeが持つ変数】</strong><br />
-                            ・<code
-                                style="
-                                    background: #f4f4f4;
-                                    padding: 2px 4px;
-                                    border-radius: 4px;
-                                "
-                                >next</code
-                            >
-                            : 子ノードのインデックス配列（道がない場合は
-                            <code
-                                style="
-                                    background: #f4f4f4;
-                                    padding: 2px 4px;
-                                    border-radius: 4px;
-                                "
-                                >-1</code
-                            >
-                            ）。<br />
-                            ・<code
-                                style="
-                                    background: #f4f4f4;
-                                    padding: 2px 4px;
-                                    border-radius: 4px;
-                                "
-                                >accept_count</code
-                            >
-                            : このノードを終端とする文字列の数（完全一致）。<br />
-                            ・<code
-                                style="
-                                    background: #f4f4f4;
-                                    padding: 2px 4px;
-                                    border-radius: 4px;
-                                "
-                                >pass_count</code
-                            >
-                            :
-                            このノードを通過（または終端）した文字列の総数（接頭辞として共有している数）。<br />
-                            ・<code
-                                style="
-                                    background: #f4f4f4;
-                                    padding: 2px 4px;
-                                    border-radius: 4px;
-                                "
-                                >accept_ids</code
-                            >
-                            :
-                            【拡張】同じ文字列が複数追加される事も考慮し、追加時のラベル（indexなど）を保持する配列。<br />
-                            ・<code
-                                style="
-                                    background: #f4f4f4;
-                                    padding: 2px 4px;
-                                    border-radius: 4px;
-                                "
-                                >val</code
-                            >
-                            :
-                            【拡張】ノードごとに持たせたい関数の値、重み、DPのスコアなど。
+                            <strong>【各Nodeが持つ変数の詳細な意味】</strong><br />
+                            ・<code style="background: #f4f4f4; padding: 2px 4px; border-radius: 4px;">next[c]</code>
+                            : 文字 <code>c</code> に対応する子ノードのインデックス。無い場合は <code>-1</code>。<br />
+                            ・<code style="background: #f4f4f4; padding: 2px 4px; border-radius: 4px;">accept_count</code>
+                            : <strong>「このノードでピッタリ終わる」</strong>文字列がいくつ登録されたか。削除されると減ります。<br />
+                            ・<code style="background: #f4f4f4; padding: 2px 4px; border-radius: 4px;">pass_count</code>
+                            : <strong>「このノードを通る」</strong>（または終わる）文字列の総数。つまり、このノードを根とする部分木の要素数です。<br />
                         </p>
 
                         <div
@@ -1870,62 +1903,1076 @@ struct Trie {
 
                             <details class="snippet-details">
                                 <summary>
-                                    1. 文字列の追加とラベル・値の取得
+                                    0. 内部構造についてのメモ
                                 </summary>
-                                <pre><code class="hljs language-c++">Trie&lt;26, 'a'&gt; trie;
+                                <div style="padding: 10px; background-color: #fff9f9; border-left: 4px solid #d93025; font-size: 0.9em;">
+                                    <p style="margin-top:0;"><strong>Q. 親ノードに遡りたい場合は？</strong></p>
+                                    <p>Trie木はデフォルトでは親へのポインタを持っていません。対処法は2つです。<br>
+                                    1. 探索時に <code>vector&lt;int&gt; path;</code> を用意し、進むたびに <code>path.push_back(curr);</code> して履歴を残す（<code>erase</code>の実装を参考にしてください）。<br>
+                                    2. 構造体 <code>Node</code> の定義に <code>int parent;</code> を足し、コンストラクタで <code>-1</code> に初期化。<code>insert</code>内のノード作成時に <code>nodes[nodes.size()-1].parent = curr;</code> を追加すれば、<code>curr = nodes[curr].parent;</code> で遡れるようになります。</p>
 
-// insert(文字列, id, val)
-trie.insert("apple", 101, 50);
-trie.insert("apple", 102, 30); // 同じ文字列を別のIDで追加
-trie.insert("app", 103, 10);
-
-int node_id = trie.search("apple");
-if (node_id != -1) {
-    // node_id は "apple" の終端ノード
-    // trie.nodes[node_id].accept_ids -> {101, 102}
-    // trie.nodes[node_id].val -> 80 (50 + 30)
+                                    <p><strong>Q. 特定の文字の子ノードが存在するか調べたい</strong></p>
+                                    <pre style="margin:5px 0;"><code class="hljs language-c++">int c = 'x' - 'a'; // 'a'の部分はbaseに合わせて
+if (trie.nodes[curr].next[c] != -1) {
+    // 子が存在する
+    int child = trie.nodes[curr].next[c];
 }</code></pre>
+
+                                    <p><strong>Q. 木全体を走査してDP等を回したい</strong></p>
+                                    <p><code>pass_count</code> が 0 のノードは実質「空」なので、探索を枝刈りできます。また、子へ再帰するDFSを書くことで、辞書順走査や木DPが簡単に実装可能です（後述のテンプレート3を参照）。</p>
+
+                                    <p><strong>Q. ノードの「値」を更新したい</strong></p>
+                                    <p><code>search</code> 等で返ってきた <code>node_id</code> を使って、直接 <code>trie.nodes[node_id].val = 100;</code> のようにアクセスして書き換えるのが一番簡単です。</p>
+                                </div>
                             </details>
 
                             <details class="snippet-details">
                                 <summary>
-                                    2. Prefix (接頭辞) の出現回数カウント
+                                    1. 文字列の追加 / 削除 / 個数カウント
                                 </summary>
                                 <pre><code class="hljs language-c++">Trie&lt;26, 'a'&gt; trie;
-trie.insert("cat");
-trie.insert("cap");
-trie.insert("camera");
 
-// "ca" から始まる文字列の数を O(|S|) で取得
-int cnt = trie.count_prefix("ca"); // -> 3 が返る
-int cnt2 = trie.count_prefix("cap"); // -> 1 が返る</code></pre>
+trie.insert("apple");
+trie.insert("apple");
+trie.insert("app");
+
+cout &lt;&lt; trie.size() &lt;&lt; endl; // 3 (全要素数)
+cout &lt;&lt; trie.count("apple") &lt;&lt; endl; // 2 (appleの数)
+
+trie.erase("apple"); // 1つだけ消す
+cout &lt;&lt; trie.count("apple") &lt;&lt; endl; // 1になる
+cout &lt;&lt; trie.size() &lt;&lt; endl; // 2になる</code></pre>
                             </details>
 
                             <details class="snippet-details">
-                                <summary>3. 辞書順の走査 (DFS)</summary>
+                                <summary>
+                                    2. Prefix (接頭辞) 検索とLCPの取得
+                                </summary>
                                 <pre><code class="hljs language-c++">Trie&lt;26, 'a'&gt; trie;
-// 挿入処理...
+trie.insert("camera");
+trie.insert("camp");
+trie.insert("cat");
 
-// 辞書順に文字列を復元しながら探索するDFS
+// "ca" から始まる文字列の数を O(|S|) で取得
+int cnt = trie.count_prefix("ca"); // -&gt; 3
+int cnt2 = trie.count_prefix("cam"); // -&gt; 2
+
+// "camel" と木内の文字列が最大何文字一致するか (LCP)
+int lcp = trie.get_lcp_length("camel"); // -&gt; 3 ("cam"まで一致)</code></pre>
+                            </details>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    3. 辞書順 k番目の取得 / DFSによる走査
+                                </summary>
+                                <pre><code class="hljs language-c++">// 計算量は、出力される文字列をSとして、O(S)
+// 例えば、出力される文字列の長さの和に関して制約があれば有効
+// そうでないときは、suffix arrayに逃げると良い
+                                    
+Trie&lt;26, 'a'&gt; trie;
+trie.insert("cat");
+trie.insert("apple");
+trie.insert("banana");
+
+// 辞書順で1番目(1-indexed)を取得 -&gt; "apple"
+string first = trie.kth_element(1);
+// 3番目を取得 -&gt; "cat"
+string third = trie.kth_element(3);
+
+// 【自作DFSで辞書順に全列挙する例】
 auto dfs = [&amp;](auto self, int u, string current_str) -&gt; void {
-    // このノードで終わる文字列がある場合
-    if (trie.nodes[u].accept_count &gt; 0) {
-        // current_str が構築された文字列
+    // このノードで終わる文字列があるなら出力等を行う
+    for (int k = 0; k &lt; trie.nodes[u].accept_count; k++) {
+        cout &lt;&lt; current_str &lt;&lt; endl;
     }
-
-    // 辞書順に子ノードへ潜る
+    // 辞書順(0〜25)に子ノードへ潜る
     for (int i = 0; i &lt; 26; i++) {
         int v = trie.nodes[u].next[i];
-        if (v != -1) {
+        if (v != -1 &amp;&amp; trie.nodes[v].pass_count &gt; 0) {
             self(self, v, current_str + char('a' + i));
         }
     }
 };
-
 dfs(dfs, 0, ""); // 根(0)から空文字列でスタート</code></pre>
+                            </details>
+
+                            <details class="snippet-details">
+                                <summary>4. 複数削除と内包Prefixのカウント</summary>
+                                <pre><code class="hljs language-c++">Trie&lt;26, 'a'&gt; trie;
+trie.insert("cat");
+trie.insert("catch");
+trie.insert("camera");
+
+// "catch" のprefixとなる木の要素数をカウント ("cat", "catch" の2つ)
+int pre_cnt = trie.count_prefixes_of("catch"); // -&gt; 2
+
+// "ca" をprefixに持つ要素を全て削除 ("cat", "catch", "camera" 全て消える)
+trie.erase_by_prefix("ca");
+cout &lt;&lt; trie.size() &lt;&lt; endl; // -&gt; 0</code></pre>
                             </details>
                         </div>
                     </div>
+
+<div class="function-note" id="trie-tree-sequence">
+                        <div class="function-header">
+                            <h3 class="function-name">
+                                Trie Tree (Prefix Tree) - 数列バージョン
+                            </h3>
+                            <p class="function-purpose">
+                                <span class="label">用途:</span>
+                                数列集合の高速な管理、共通接頭辞(Prefix)の検索、辞書順走査、Trie木上でのDP
+                            </p>
+                        </div>
+                        <p>
+                            <strong>計算量:</strong> 挿入・検索・削除・LCP取得など 基本操作はすべて O(|S| log U)
+                            （|S| は数列の長さ、Uは各ノードから出る分岐の数。内部にmapを使用）。<br />
+                            競技プログラミング等の本番で要求されやすい「特定数列の正確な削除」「辞書順k番目の取得」を追加し、内部構造の拡張性も確保。
+                        </p>
+                        <div
+                            class="code-block"
+                            data-custom-lines="true"
+                            aria-label="Code block"
+                        >
+                            <div class="code-toolbar">
+                                <span class="lang-label" aria-hidden="true"
+                                    >C++ (Standard)</span
+                                >
+                                <button
+                                    class="copy-btn"
+                                    type="button"
+                                    aria-label="Copy code"
+                                >
+                                    Copy
+                                </button>
+                            </div>
+                            <div class="code-wrap">
+                                <pre><code class="hljs language-c++" spellcheck="false">// T: 数列の要素の型 (int, long long など)
+template &lt;typename T = long long&gt;
+struct Trie {
+  struct Node {
+    map&lt;T, int&gt; next;       // 子ノードのインデックス
+    int accept_count;       // このノードを「終端」とする数列の数
+    int pass_count;         // このノードを「通過」した数列の数 (部分木の要素数)
+    
+    // --- 汎用拡張データ ---
+    vector&lt;int&gt; accept_ids; // このノードで終わる数列のラベル(追加時のIDなど)
+    long long val;          // 関数値、重み、DPの結果などを持たせる汎用変数
+
+    Node() : accept_count(0), pass_count(0), val(0) {}
+  };
+
+  vector&lt;Node&gt; nodes;
+
+  Trie() {
+    nodes.push_back(Node()); // root (id = 0) を追加
+  }
+
+  // 現在のTrie木に含まれる全数列の数を取得 O(1)
+  int size() const {
+    return nodes[0].pass_count;
+  }
+
+  // 数列の挿入
+  void insert(const vector&lt;T&gt; &amp;s, int id = -1, long long val = 0) {
+    int curr = 0;
+    nodes[curr].pass_count++;
+    for (const T&amp; c : s) {
+      if (!nodes[curr].next.count(c)) {
+        nodes[curr].next[c] = nodes.size();
+        nodes.push_back(Node());
+      }
+      curr = nodes[curr].next[c];
+      nodes[curr].pass_count++;
+    }
+    nodes[curr].accept_count++;
+    if (id != -1) nodes[curr].accept_ids.push_back(id);
+    nodes[curr].val += val; 
+  }
+
+  // 単一数列の正確な削除 (集合からsを1つだけ減らす)
+  // 成功したらtrue, そもそも存在しなかったらfalseを返す
+  bool erase(const vector&lt;T&gt; &amp;s) {
+    int curr = 0;
+    vector&lt;int&gt; path;
+    for (const T&amp; c : s) {
+      path.push_back(curr);
+      if (!nodes[curr].next.count(c)) return false; // 存在しない
+      curr = nodes[curr].next[c];
+    }
+    if (nodes[curr].accept_count == 0) return false; // 終端として存在しない
+    
+    nodes[curr].accept_count--;
+    nodes[curr].pass_count--;
+    for (int p : path) nodes[p].pass_count--; // 祖先の通過数を減らす
+    return true;
+  }
+
+  // 完全一致する数列の個数を取得
+  int count(const vector&lt;T&gt; &amp;s) {
+    int curr = 0;
+    for (const T&amp; c : s) {
+      if (!nodes[curr].next.count(c)) return 0;
+      curr = nodes[curr].next[c];
+    }
+    return nodes[curr].accept_count;
+  }
+
+  // 終端ノードのID検索 (見つかれば終端ノードのIDを、なければ -1)
+  int search(const vector&lt;T&gt; &amp;s) {
+    int curr = 0;
+    for (const T&amp; c : s) {
+      if (!nodes[curr].next.count(c)) return -1;
+      curr = nodes[curr].next[c];
+    }
+    return nodes[curr].accept_count &gt; 0 ? curr : -1;
+  }
+
+  // Prefix(接頭辞)検索 (S から始まる数列の数を返す)
+  int count_prefix(const vector&lt;T&gt; &amp;s) {
+    int curr = 0;
+    for (const T&amp; c : s) {
+      if (!nodes[curr].next.count(c)) return 0;
+      curr = nodes[curr].next[c];
+    }
+    return nodes[curr].pass_count;
+  }
+
+  // 特定の数列をprefixに持つ要素を全て削除する
+  void erase_by_prefix(const vector&lt;T&gt; &amp;s) {
+    if (s.empty()) { 
+      nodes[0] = Node(); // 空数列指定は全クリアと同義
+      return;
+    }
+    int curr = 0;
+    vector&lt;int&gt; path;
+    for (const T&amp; c : s) {
+      path.push_back(curr);
+      if (!nodes[curr].next.count(c)) return; // 存在しない
+      curr = nodes[curr].next[c];
+    }
+    int removed = nodes[curr].pass_count;
+    if (removed == 0) return;
+    
+    nodes[path.back()].next.erase(s.back()); // 木から切断
+    for (int p : path) nodes[p].pass_count -= removed;
+  }
+
+  // sがprefixとなるような、木内の数列の「総数」ではなく
+  // 「sのprefixとなるような木内の数列」の個数 (s={1,2,3}なら{1,2}, {1,2,3}等)
+  int count_prefixes_of(const vector&lt;T&gt; &amp;s) {
+    int curr = 0, res = 0;
+    for (const T&amp; c : s) {
+      res += nodes[curr].accept_count;
+      if (!nodes[curr].next.count(c)) return res;
+      curr = nodes[curr].next[c];
+    }
+    res += nodes[curr].accept_count;
+    return res;
+  }
+
+  // 最長共通接頭辞 (LCP) のマッチ長取得
+  // 木に含まれるいずれかの数列と、sが先頭から何要素一致するか
+  int get_lcp_length(const vector&lt;T&gt; &amp;s) {
+    int curr = 0, len = 0;
+    for (const T&amp; c : s) {
+      if (!nodes[curr].next.count(c)) break;
+      curr = nodes[curr].next[c];
+      len++;
+    }
+    return len;
+  }
+
+  // 辞書順で k 番目 (1-indexed) の数列を取得
+  // k が要素数を超える、または k &lt;= 0 の場合は空の数列を返す
+  vector&lt;T&gt; kth_element(int k) {
+    if (k &lt;= 0 || k &gt; nodes[0].pass_count) return {};
+    int curr = 0;
+    vector&lt;T&gt; res;
+    while (true) {
+      if (k &lt;= nodes[curr].accept_count) return res;
+      k -= nodes[curr].accept_count;
+      // mapはキー(要素の値)で自動的に昇順ソートされている
+      for (auto&amp; [val, nxt] : nodes[curr].next) {
+        if (k &lt;= nodes[nxt].pass_count) {
+          res.push_back(val);
+          curr = nxt;
+          break;
+        } else {
+          k -= nodes[nxt].pass_count;
+        }
+      }
+    }
+  }
+};</code></pre>
+                            </div>
+                        </div>
+                        <p
+                            class="automaton-variables-note"
+                            style="line-height: 1.6; color: #333"
+                        >
+                            <strong>【各Nodeが持つ変数の詳細な意味】</strong><br />
+                            ・<code style="background: #f4f4f4; padding: 2px 4px; border-radius: 4px;">next[c]</code>
+                            : 要素 <code>c</code> に対応する子ノードのインデックス。数列の要素空間が広いため <code>std::map</code> (または要件に応じて <code>std::unordered_map</code>) で管理します。<br />
+                            ・<code style="background: #f4f4f4; padding: 2px 4px; border-radius: 4px;">accept_count</code>
+                            : <strong>「このノードでピッタリ終わる」</strong>数列がいくつ登録されたか。削除されると減ります。<br />
+                            ・<code style="background: #f4f4f4; padding: 2px 4px; border-radius: 4px;">pass_count</code>
+                            : <strong>「このノードを通る」</strong>（または終わる）数列の総数。つまり、このノードを根とする部分木の要素数です。<br />
+                        </p>
+
+                        <div
+                            class="template-collection"
+                            style="margin-top: 15px"
+                        >
+                            <h4
+                                style="
+                                    margin-bottom: 5px;
+                                    font-size: 0.95em;
+                                    color: #555;
+                                "
+                            >
+                                ▼ 応用テンプレート（コピペ＆即使用用）
+                            </h4>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    0. 内部構造についてのメモ
+                                </summary>
+                                <div style="padding: 10px; background-color: #fff9f9; border-left: 4px solid #d93025; font-size: 0.9em;">
+                                    <p style="margin-top:0;"><strong>Q. 親ノードに遡りたい場合は？</strong></p>
+                                    <p>Trie木はデフォルトでは親へのポインタを持っていません。対処法は2つです。<br>
+                                    1. 探索時に <code>vector&lt;int&gt; path;</code> を用意し、進むたびに <code>path.push_back(curr);</code> して履歴を残す（<code>erase</code>の実装を参考にしてください）。<br>
+                                    2. 構造体 <code>Node</code> の定義に <code>int parent;</code> を足し、コンストラクタで <code>-1</code> に初期化。<code>insert</code>内のノード作成時に <code>nodes[nodes.size()-1].parent = curr;</code> を追加すれば、<code>curr = nodes[curr].parent;</code> で遡れるようになります。</p>
+
+                                    <p><strong>Q. 特定の要素の子ノードが存在するか調べたい</strong></p>
+                                    <pre style="margin:5px 0;"><code class="hljs language-c++">long long c = 100; // 探したい要素
+if (trie.nodes[curr].next.count(c)) {
+    // 子が存在する
+    int child = trie.nodes[curr].next[c];
+}</code></pre>
+
+                                    <p><strong>Q. 木全体を走査してDP等を回したい</strong></p>
+                                    <p><code>pass_count</code> が 0 のノードは実質「空」なので、探索を枝刈りできます。また、子へ再帰するDFSを書くことで、辞書順走査や木DPが簡単に実装可能です（後述のテンプレート3を参照）。</p>
+                                </div>
+                            </details>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    1. 数列の追加 / 削除 / 個数カウント
+                                </summary>
+                                <pre><code class="hljs language-c++">Trie&lt;long long&gt; trie;
+
+vector&lt;long long&gt; A = {1, 2, 3};
+vector&lt;long long&gt; B = {1, 2};
+
+trie.insert(A);
+trie.insert(A);
+trie.insert(B);
+
+cout &lt;&lt; trie.size() &lt;&lt; endl; // 3 (全要素数)
+cout &lt;&lt; trie.count(A) &lt;&lt; endl; // 2 (Aの数)
+
+trie.erase(A); // 1つだけ消す
+cout &lt;&lt; trie.count(A) &lt;&lt; endl; // 1になる
+cout &lt;&lt; trie.size() &lt;&lt; endl; // 2になる</code></pre>
+                            </details>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    2. Prefix (接頭辞) 検索とLCPの取得
+                                </summary>
+                                <pre><code class="hljs language-c++">Trie&lt;int&gt; trie;
+trie.insert({3, 1, 4, 1, 5});
+trie.insert({3, 1, 4, 9});
+trie.insert({3, 2, 1});
+
+// {3, 1} から始まる数列の数を O(|S| log U) で取得
+int cnt = trie.count_prefix({3, 1}); // -&gt; 2
+int cnt2 = trie.count_prefix({3, 1, 4}); // -&gt; 2
+
+// {3, 1, 4, 2} と木内の数列が最大何要素一致するか (LCP)
+int lcp = trie.get_lcp_length({3, 1, 4, 2}); // -&gt; 3 ({3, 1, 4}まで一致)</code></pre>
+                            </details>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    3. 辞書順 k番目の取得 / DFSによる走査
+                                </summary>
+                                <pre><code class="hljs language-c++">Trie&lt;int&gt; trie;
+trie.insert({3, 2});
+trie.insert({1, 2, 3});
+trie.insert({1, 5});
+
+// 辞書順で1番目(1-indexed)を取得 -&gt; {1, 2, 3}
+vector&lt;int&gt; first = trie.kth_element(1);
+// 3番目を取得 -&gt; {3, 2}
+vector&lt;int&gt; third = trie.kth_element(3);
+
+// 【自作DFSで辞書順に全列挙する例】
+auto dfs = [&amp;](auto self, int u, vector&lt;int&gt; current_seq) -&gt; void {
+    // このノードで終わる数列があるなら出力等を行う
+    for (int k = 0; k &lt; trie.nodes[u].accept_count; k++) {
+        for (int x : current_seq) cout &lt;&lt; x &lt;&lt; " ";
+        cout &lt;&lt; endl;
+    }
+    // mapは自動的にキーで昇順ソートされているため、そのまま回せば辞書順になる
+    for (auto&amp; [val, v] : trie.nodes[u].next) {
+        if (trie.nodes[v].pass_count &gt; 0) {
+            current_seq.push_back(val);
+            self(self, v, current_seq);
+            current_seq.pop_back(); // バックトラック
+        }
+    }
+};
+dfs(dfs, 0, {}); // 根(0)から空数列でスタート</code></pre>
+                            </details>
+
+                            <details class="snippet-details">
+                                <summary>4. 複数削除と内包Prefixのカウント</summary>
+                                <pre><code class="hljs language-c++">Trie&lt;int&gt; trie;
+trie.insert({1, 2});
+trie.insert({1, 2, 3});
+trie.insert({1, 5, 9});
+
+// {1, 2, 3} のprefixとなる木の要素数をカウント ({1, 2}, {1, 2, 3} の2つ)
+int pre_cnt = trie.count_prefixes_of({1, 2, 3}); // -&gt; 2
+
+// {1, 2} をprefixに持つ要素を全て削除 ({1, 2}, {1, 2, 3} が消える)
+trie.erase_by_prefix({1, 2});
+cout &lt;&lt; trie.size() &lt;&lt; endl; // -&gt; 1 ({1, 5, 9}のみ残る)</code></pre>
+                            </details>
+                        </div>
+                    </div>
+
+<div class="function-note" id="binary-trie">
+                        <div class="function-header">
+                            <h3 class="function-name">
+                                Binary Trie (XOR & 区間操作 拡張版)
+                            </h3>
+                            <p class="function-purpose">
+                                <span class="label">用途:</span>
+                                整数集合の高速な管理、multiset の代替、XOR 空間上の最大/最小値の検索、全体への XOR 作用下での K 番目の値の取得、<b>区間カウント・区間の一括削除</b>
+                            </p>
+                        </div>
+                        <p>
+                            <strong>計算量:</strong> 挿入・検索・削除・XORクエリ・K番目の取得・区間操作など、基本操作はすべて O(MAX_LOG)
+                            （MAX_LOG はビット数、通常 30〜60）。<br />
+                            競技プログラミングで頻出する「集合全体の要素に一括で XOR 演算を適用した上での最大値・最小値の取得」「辞書順 k 番目の取得」に加え、「XOR 後の [L, R] 区間の一括削除 / カウント」をセグメント木の手法（枝刈り）で O(MAX_LOG) で実現した超高機能・過保護モデルです。
+                        </p>
+                        <div
+                            class="code-block"
+                            data-custom-lines="true"
+                            aria-label="Code block"
+                        >
+                            <div class="code-toolbar">
+                                <span class="lang-label" aria-hidden="true"
+                                    >C++ (Standard)</span
+                                >
+                                <button
+                                    class="copy-btn"
+                                    type="button"
+                                    aria-label="Copy code"
+                                >
+                                    Copy
+                                </button>
+                            </div>
+                            <div class="code-wrap">
+                                <pre><code class="hljs language-c++" spellcheck="false">// T: 扱う整数の型 (int なら MAX_LOG=30, long long なら MAX_LOG=60 が目安)
+template &lt;typename T = long long, int MAX_LOG = 60&gt;
+struct BinaryTrie {
+  struct Node {
+    int next[2];       // 0/1 の子ノードへのインデックス (-1は子が存在しない)
+    int accept_count;  // このノードを「終端」とする整数の数 (重複管理用)
+    int pass_count;    // このノードを「通過」した整数の数 (部分木の要素数)
+
+    Node() : accept_count(0), pass_count(0) {
+      next[0] = next[1] = -1;
+    }
+  };
+
+  vector&lt;Node&gt; nodes;
+
+  BinaryTrie() {
+    nodes.push_back(Node()); // root (id = 0) を追加
+  }
+
+  // 現在のTrie木に含まれる全要素数を取得 O(1)
+  int size() const {
+    return nodes[0].pass_count;
+  }
+
+  // 要素の挿入 (count 個まとめて追加可能)
+  void insert(T val, int count = 1) {
+    if (count &lt;= 0) return;
+    int curr = 0;
+    nodes[curr].pass_count += count;
+    for (int i = MAX_LOG - 1; i &gt;= 0; i--) {
+      int b = (val &gt;&gt; i) &amp; 1;
+      if (nodes[curr].next[b] == -1) {
+        nodes[curr].next[b] = nodes.size();
+        nodes.push_back(Node());
+      }
+      curr = nodes[curr].next[b];
+      nodes[curr].pass_count += count;
+    }
+    nodes[curr].accept_count += count;
+  }
+
+  // 要素の削除 (count 個まとめて削除可能)
+  bool erase(T val, int count = 1) {
+    if (count &lt;= 0) return true;
+    int curr = 0;
+    int existing = this-&gt;count(val);
+    int remove_cnt = min(existing, count);
+    if (remove_cnt == 0) return false;
+
+    nodes[curr].pass_count -= remove_cnt;
+    for (int i = MAX_LOG - 1; i &gt;= 0; i--) {
+      int b = (val &gt;&gt; i) &amp; 1;
+      curr = nodes[curr].next[b];
+      nodes[curr].pass_count -= remove_cnt;
+    }
+    nodes[curr].accept_count -= remove_cnt;
+    return existing &gt;= count;
+  }
+
+  // 特定の要素の個数を取得
+  int count(T val) const {
+    int curr = 0;
+    for (int i = MAX_LOG - 1; i &gt;= 0; i--) {
+      int b = (val &gt;&gt; i) &amp; 1;
+      if (nodes[curr].next[b] == -1) return 0;
+      curr = nodes[curr].next[b];
+    }
+    return nodes[curr].accept_count;
+  }
+
+  // xor_val と木内の要素を XOR したとき、最小となる値を返す
+  T min_element(T xor_val = 0) const {
+    if (size() == 0) return -1; 
+    int curr = 0;
+    T res = 0;
+    for (int i = MAX_LOG - 1; i &gt;= 0; i--) {
+      int b = (xor_val &gt;&gt; i) &amp; 1;
+      if (nodes[curr].next[b] != -1 &amp;&amp; nodes[nodes[curr].next[b]].pass_count &gt; 0) {
+        curr = nodes[curr].next[b];
+      } else {
+        curr = nodes[curr].next[b ^ 1];
+        res |= (1LL &lt;&lt; i); 
+      }
+    }
+    return res;
+  }
+
+  // xor_val と木内の要素を XOR したとき、最大となる値を返す
+  T max_element(T xor_val = 0) const {
+    if (size() == 0) return -1;
+    int curr = 0;
+    T res = 0;
+    for (int i = MAX_LOG - 1; i &gt;= 0; i--) {
+      int b = (xor_val &gt;&gt; i) &amp; 1;
+      if (nodes[curr].next[b ^ 1] != -1 &amp;&amp; nodes[nodes[curr].next[b ^ 1]].pass_count &gt; 0) {
+        curr = nodes[curr].next[b ^ 1];
+        res |= (1LL &lt;&lt; i); 
+      } else {
+        curr = nodes[curr].next[b];
+      }
+    }
+    return res;
+  }
+
+  // 昇順で k 番目 (1-indexed) の値を取得 (オプションで全体に xor_val を作用)
+  T kth_element(int k, T xor_val = 0) const {
+    if (k &lt;= 0 || k &gt; size()) return -1;
+    int curr = 0;
+    T res = 0;
+    for (int i = MAX_LOG - 1; i &gt;= 0; i--) {
+      int b = (xor_val &gt;&gt; i) &amp; 1;
+      int left_child = nodes[curr].next[b];
+      int left_cnt = (left_child != -1) ? nodes[left_child].pass_count : 0;
+
+      if (k &lt;= left_cnt) {
+        curr = left_child;
+      } else {
+        k -= left_cnt;
+        curr = nodes[curr].next[b ^ 1];
+        res |= (1LL &lt;&lt; i);
+      }
+    }
+    return res;
+  }
+
+  // 指定した値未満(xor_val作用時)の要素がいくつあるか
+  int count_less_than(T val, T xor_val = 0) const {
+    int curr = 0;
+    int res = 0;
+    for (int i = MAX_LOG - 1; i &gt;= 0; i--) {
+      if (curr == -1) break;
+      int b = (val &gt;&gt; i) &amp; 1;
+      int x = (xor_val &gt;&gt; i) &amp; 1;
+
+      if (b == 1) {
+        int zero_child = nodes[curr].next[x];
+        if (zero_child != -1) res += nodes[zero_child].pass_count;
+        curr = nodes[curr].next[x ^ 1]; 
+      } else {
+        curr = nodes[curr].next[x];
+      }
+    }
+    return res;
+  }
+
+  // 【追加】指定した区間 [L, R] の要素数を取得 (xor_val 作用時)
+  int count_in_range(T L, T R, T xor_val = 0) const {
+    if (L &gt; R) return 0;
+    return count_less_than(R + 1, xor_val) - count_less_than(L, xor_val);
+  }
+
+  // 【追加】指定した区間 [L, R] の要素をまとめて削除 (xor_val 作用時)
+  // セグメント木のように、完全に区間に含まれる部分木をまるごと切り落とすため O(MAX_LOG)
+  // 削除された要素の総数を返す
+  int erase_in_range(T L, T R, T xor_val = 0) {
+    if (L &gt; R || size() == 0) return 0;
+    return _erase_range_rec(0, MAX_LOG - 1, L, R, xor_val, 0);
+  }
+
+private:
+  int _erase_range_rec(int curr, int depth, T L, T R, T xor_val, T current_xor_prefix) {
+    if (curr == -1 || nodes[curr].pass_count == 0) return 0;
+
+    // 現在の部分木に含まれる要素の (XOR適用後の) 最小値と最大値
+    T low = current_xor_prefix;
+    T high = current_xor_prefix | (T)((1ULL &lt;&lt; (depth + 1)) - 1);
+
+    if (high &lt; L || R &lt; low) return 0; // 完全に削除範囲外ならスキップ
+
+    if (L &lt;= low &amp;&amp; high &lt;= R) {
+      // 完全に削除範囲内なら、この部分木を根元から切断して一括削除
+      int deleted = nodes[curr].pass_count;
+      nodes[curr].pass_count = 0;
+      nodes[curr].accept_count = 0;
+      nodes[curr].next[0] = nodes[curr].next[1] = -1;
+      return deleted;
+    }
+
+    if (depth &lt; 0) return 0;
+
+    int x = (xor_val &gt;&gt; depth) &amp; 1;
+    int deleted = 0;
+
+    // 元の木での 0 の枝 (XOR 適用後は 0 ^ x のビットを持つ)
+    if (nodes[curr].next[0] != -1) {
+      T next_prefix = current_xor_prefix | ((T)(0 ^ x) &lt;&lt; depth);
+      deleted += _erase_range_rec(nodes[curr].next[0], depth - 1, L, R, xor_val, next_prefix);
+    }
+    // 元の木での 1 の枝 (XOR 適用後は 1 ^ x のビットを持つ)
+    if (nodes[curr].next[1] != -1) {
+      T next_prefix = current_xor_prefix | ((T)(1 ^ x) &lt;&lt; depth);
+      deleted += _erase_range_rec(nodes[curr].next[1], depth - 1, L, R, xor_val, next_prefix);
+    }
+
+    nodes[curr].pass_count -= deleted;
+    return deleted;
+  }
+};</code></pre>
+                            </div>
+                        </div>
+                        <p
+                            class="automaton-variables-note"
+                            style="line-height: 1.6; color: #333"
+                        >
+                            <strong>【各Nodeが持つ変数の詳細な意味】</strong><br />
+                            ・<code style="background: #f4f4f4; padding: 2px 4px; border-radius: 4px;">next[0] / next[1]</code>
+                            : 0のビット、1のビットに対応する子ノードのインデックス。無い場合は <code>-1</code>。<br />
+                            ・<code style="background: #f4f4f4; padding: 2px 4px; border-radius: 4px;">accept_count</code>
+                            : そのノードを終端とする同一整数の重複登録数。<br />
+                            ・<code style="background: #f4f4f4; padding: 2px 4px; border-radius: 4px;">pass_count</code>
+                            : <strong>「このノードを通る」</strong>要素の総数（部分木のサイズ）。この値を持つことで、K番目の取得や個数カウントが O(1) 分岐で高速に行えます。<br />
+                        </p>
+
+                        <div
+                            class="template-collection"
+                            style="margin-top: 15px"
+                        >
+                            <h4
+                                style="
+                                    margin-bottom: 5px;
+                                    font-size: 0.95em;
+                                    color: #555;
+                                "
+                            >
+                                ▼ 応用テンプレート（コピペ＆即使用用）
+                            </h4>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    1. 集合への追加 / 削除 / multiset 的利用
+                                </summary>
+                                <pre><code class="hljs language-c++">BinaryTrie&lt;int, 30&gt; trie; // int なら 30 bit で十分
+
+trie.insert(5);
+trie.insert(5);
+trie.insert(9);
+
+cout &lt;&lt; trie.size() &lt;&lt; endl;    // 3 (全要素数)
+cout &lt;&lt; trie.count(5) &lt;&lt; endl;  // 2 (5の個数)
+
+trie.erase(5); // 1つだけ消す
+cout &lt;&lt; trie.count(5) &lt;&lt; endl;  // 1になる
+
+trie.insert(10, 5); // 10 を 5個まとめて追加できる
+cout &lt;&lt; trie.count(10) &lt;&lt; endl; // 5</code></pre>
+                            </details>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    2. XOR 空間上の 最大 / 最小値
+                                </summary>
+                                <pre><code class="hljs language-c++">BinaryTrie&lt;int, 30&gt; trie;
+trie.insert(2);  // 0010
+trie.insert(10); // 1010
+trie.insert(15); // 1111
+
+// 全ての要素に対して 6 (0110) と XOR を取ったとき...
+// 最大値は 15 ^ 6 = 9 
+// 最小値は 2 ^ 6 = 4 
+
+cout &lt;&lt; trie.max_element(6) &lt;&lt; endl; // -&gt; 9
+cout &lt;&lt; trie.min_element(6) &lt;&lt; endl; // -&gt; 4
+
+// 木の中の元の要素を知りたい場合は、結果にもう一度 XOR を掛ける
+int original = trie.max_element(6) ^ 6;
+cout &lt;&lt; original &lt;&lt; endl; // -&gt; 15</code></pre>
+                            </details>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    3. K 番目の要素と、全体 XOR 作用下での順序
+                                </summary>
+                                <pre><code class="hljs language-c++">BinaryTrie&lt;int, 30&gt; trie;
+trie.insert(1); // 0001
+trie.insert(3); // 0011
+trie.insert(5); // 0101
+
+// 普通に昇順で K 番目を取得
+cout &lt;&lt; trie.kth_element(1) &lt;&lt; endl; // -&gt; 1
+cout &lt;&lt; trie.kth_element(3) &lt;&lt; endl; // -&gt; 5
+
+// もし全要素に "2 (0010)" を XOR した場合、
+// 集合は { 1^2, 3^2, 5^2 } = { 3, 1, 7 } になる。
+// この仮想的な集合において、昇順で1番目(最小値)は 1、2番目は 3。
+cout &lt;&lt; trie.kth_element(1, 2) &lt;&lt; endl; // -&gt; 1
+cout &lt;&lt; trie.kth_element(2, 2) &lt;&lt; endl; // -&gt; 3</code></pre>
+                            </details>
+                            
+                            <details class="snippet-details">
+                                <summary>
+                                    4. 指定された値未満の要素数 (Lower Bound 的利用)
+                                </summary>
+                                <pre><code class="hljs language-c++">BinaryTrie&lt;int, 30&gt; trie;
+trie.insert(3);
+trie.insert(5);
+trie.insert(5);
+trie.insert(9);
+
+// 値が 6 未満の要素数はいくつか
+cout &lt;&lt; trie.count_less_than(6) &lt;&lt; endl; // -&gt; 3 (3, 5, 5)
+
+// 全体に 3 を XOR したと仮定したとき、6 未満の要素数はいくつか
+// {3^3, 5^3, 5^3, 9^3} = {0, 6, 6, 10}
+cout &lt;&lt; trie.count_less_than(6, 3) &lt;&lt; endl; // -&gt; 1 (0 のみ)</code></pre>
+                            </details>
+
+                            <details class="snippet-details" >
+                                <summary>
+                                     5. 区間 [L, R] のカウント と まとめて削除
+                                </summary>
+                                <pre><code class="hljs language-c++">BinaryTrie&lt;int, 30&gt; trie;
+trie.insert(10);
+trie.insert(12);
+trie.insert(15);
+trie.insert(20);
+
+// [11, 16] の範囲にある要素数をカウント (12, 15 の2つ)
+cout &lt;&lt; trie.count_in_range(11, 16) &lt;&lt; endl; // -&gt; 2
+
+// [11, 16] の範囲にある要素を木から "全て" 削除する (Prefixの削除と同義)
+int deleted_count = trie.erase_in_range(11, 16);
+cout &lt;&lt; deleted_count &lt;&lt; " 個削除されました" &lt;&lt; endl; // -&gt; 2 個削除
+
+cout &lt;&lt; trie.size() &lt;&lt; endl; // -&gt; 2 (10, 20 が残る)
+
+// ----------------------------------------------------
+// 【XOR 作用下での削除の例】
+// 要素に全体 XOR を掛けた「仮想的な状態」での区間削除も可能！
+trie.insert(5); 
+
+// 全体に 7 を XOR したと仮定すると、5 ^ 7 = 2。
+// 「XOR 適用後に 0 以上 3 以下になるもの」を全て削除
+trie.erase_in_range(0, 3, 7); // (元の 5 が削除される)</code></pre>
+                            </details>
+                        </div>
+                    </div>
+                    
+<div class="function-note" id="binary-trie-lsb">
+                        <div class="function-header">
+                            <h3 class="function-name">
+                                Binary Trie (LSB-first / 下位ビット優先 拡張版)
+                            </h3>
+                            <p class="function-purpose">
+                                <span class="label">用途:</span>
+                                整数集合の管理、下位ビットからのパターンマッチ、<b>mod 2^k での高速な検索・カウント・一括削除</b>、<b>全要素への +1 操作</b>
+                            </p>
+                        </div>
+                        <p>
+                            <strong>計算量:</strong> 挿入・削除・個数取得は O(MAX_LOG)。mod 2^k での検索・削除は O(k)。全体への +1 操作は O(MAX_LOG)。<br />
+                            <strong>注意点:</strong> 下位ビット（LSB）から順に木を構築する特殊な Binary Trie です。性質上、大小関係が木構造に反映されないため「K番目の値の取得」「最大/最小値」「区間カウント」はできなくなりますが、代わりに「特定の mod 2^k に一致する要素のカウント/削除」や「全要素へのインクリメント(+1)」が O(MAX_LOG) 以下の計算量で実現できるようになります。
+                        </p>
+                        <div
+                            class="code-block"
+                            data-custom-lines="true"
+                            aria-label="Code block"
+                        >
+                            <div class="code-toolbar">
+                                <span class="lang-label" aria-hidden="true"
+                                    >C++ (Standard)</span
+                                >
+                                <button
+                                    class="copy-btn"
+                                    type="button"
+                                    aria-label="Copy code"
+                                >
+                                    Copy
+                                </button>
+                            </div>
+                            <div class="code-wrap">
+                                <pre><code class="hljs language-c++" spellcheck="false">// T: 扱う整数の型 (int なら MAX_LOG=30, long long なら MAX_LOG=60 が目安)
+template &lt;typename T = long long, int MAX_LOG = 60&gt;
+struct LSBBinaryTrie {
+  struct Node {
+    int next[2];       // 0/1 の子ノードへのインデックス (-1は子が存在しない)
+    int accept_count;  // このノードを「終端」とする整数の数
+    int pass_count;    // このノードを「通過」した整数の数 (部分木の要素数)
+
+    Node() : accept_count(0), pass_count(0) {
+      next[0] = next[1] = -1;
+    }
+  };
+
+  vector&lt;Node&gt; nodes;
+
+  LSBBinaryTrie() {
+    nodes.push_back(Node()); // root (id = 0) を追加
+  }
+
+  // 現在のTrie木に含まれる全要素数を取得 O(1)
+  int size() const {
+    return nodes[0].pass_count;
+  }
+
+  // 要素の挿入 (下位ビットから処理)
+  void insert(T val, int count = 1) {
+    if (count &lt;= 0) return;
+    int curr = 0;
+    nodes[curr].pass_count += count;
+    for (int i = 0; i &lt; MAX_LOG; i++) { // LSB-first (0 から昇順)
+      int b = (val &gt;&gt; i) &amp; 1;
+      if (nodes[curr].next[b] == -1) {
+        nodes[curr].next[b] = nodes.size();
+        nodes.push_back(Node());
+      }
+      curr = nodes[curr].next[b];
+      nodes[curr].pass_count += count;
+    }
+    nodes[curr].accept_count += count;
+  }
+
+  // 要素の削除
+  bool erase(T val, int count = 1) {
+    if (count &lt;= 0) return true;
+    int curr = 0;
+    int existing = this-&gt;count(val);
+    int remove_cnt = min(existing, count);
+    if (remove_cnt == 0) return false;
+
+    nodes[curr].pass_count -= remove_cnt;
+    for (int i = 0; i &lt; MAX_LOG; i++) {
+      int b = (val &gt;&gt; i) &amp; 1;
+      curr = nodes[curr].next[b];
+      nodes[curr].pass_count -= remove_cnt;
+    }
+    nodes[curr].accept_count -= remove_cnt;
+    return existing &gt;= count;
+  }
+
+  // 特定の要素の個数を取得
+  int count(T val) const {
+    int curr = 0;
+    for (int i = 0; i &lt; MAX_LOG; i++) {
+      int b = (val &gt;&gt; i) &amp; 1;
+      if (nodes[curr].next[b] == -1) return 0;
+      curr = nodes[curr].next[b];
+    }
+    return nodes[curr].accept_count;
+  }
+
+  // 【特化機能】 x % (2^k) == val % (2^k) となる要素の数を取得 O(k)
+  // xor_val を作用させた状態での評価も可能
+  int count_mod(T val, int k, T xor_val = 0) const {
+    if (k &gt; MAX_LOG) k = MAX_LOG;
+    int curr = 0;
+    for (int i = 0; i &lt; k; i++) {
+      if (curr == -1) return 0;
+      int b = (val &gt;&gt; i) &amp; 1;
+      int x = (xor_val &gt;&gt; i) &amp; 1;
+      curr = nodes[curr].next[b ^ x];
+    }
+    return curr == -1 ? 0 : nodes[curr].pass_count;
+  }
+
+  // 【特化機能】 x % (2^k) == val % (2^k) となる要素を木から一括削除 O(k)
+  int erase_mod(T val, int k, T xor_val = 0) {
+    if (k &gt; MAX_LOG) k = MAX_LOG;
+    if (size() == 0) return 0;
+    return _erase_mod_rec(0, 0, val, k, xor_val);
+  }
+
+  // 【特化機能】 全ての要素に +1 する (O(MAX_LOG))
+  // ※ xor_val での仮想的なXOR操作とは独立して、実際に木の中身をインクリメントします
+  void add_all_1() {
+    if (size() &gt; 0) {
+      _add_all_1_rec(0, 0);
+    }
+  }
+
+private:
+  int _erase_mod_rec(int curr, int depth, T val, int k, T xor_val) {
+    if (curr == -1 || nodes[curr].pass_count == 0) return 0;
+    
+    if (depth == k) {
+      int deleted = nodes[curr].pass_count;
+      nodes[curr].pass_count = 0;
+      nodes[curr].accept_count = 0;
+      nodes[curr].next[0] = nodes[curr].next[1] = -1;
+      return deleted;
+    }
+
+    int target_b = (val &gt;&gt; depth) &amp; 1;
+    int x = (xor_val &gt;&gt; depth) &amp; 1;
+    int path = target_b ^ x;
+
+    int deleted = 0;
+    if (nodes[curr].next[path] != -1) {
+      deleted = _erase_mod_rec(nodes[curr].next[path], depth + 1, val, k, xor_val);
+    }
+
+    nodes[curr].pass_count -= deleted;
+    return deleted;
+  }
+
+  void _add_all_1_rec(int curr, int depth) {
+    if (curr == -1 || depth == MAX_LOG) return;
+    
+    // 0の枝と1の枝を入れ替える (+1の適用)
+    swap(nodes[curr].next[0], nodes[curr].next[1]);
+    
+    // 元々 1 だった枝 (入れ替えられて今は next[0] にある) は
+    // 桁上がり(キャリー)が発生するため、さらに上の桁へ +1 を伝播させる
+    if (nodes[curr].next[0] != -1) {
+      _add_all_1_rec(nodes[curr].next[0], depth + 1);
+    }
+  }
+};</code></pre>
+                            </div>
+                        </div>
+
+                        <div
+                            class="template-collection"
+                            style="margin-top: 15px"
+                        >
+                            <h4
+                                style="
+                                    margin-bottom: 5px;
+                                    font-size: 0.95em;
+                                    color: #555;
+                                "
+                            >
+                                ▼ 応用テンプレート（コピペ＆即使用用）
+                            </h4>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    1. 基本的な追加 / 削除 / カウント
+                                </summary>
+                                <pre><code class="hljs language-c++">LSBBinaryTrie&lt;int, 30&gt; trie;
+
+trie.insert(5);  // 00101
+trie.insert(13); // 01101
+trie.insert(21); // 10101
+
+cout &lt;&lt; trie.size() &lt;&lt; endl;    // 3
+cout &lt;&lt; trie.count(13) &lt;&lt; endl; // 1
+
+trie.erase(5);
+cout &lt;&lt; trie.count(5) &lt;&lt; endl;  // 0</code></pre>
+                            </details>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    2. mod 2^k での一致カウント (下位ビットからのパターンマッチ)
+                                </summary>
+                                <pre><code class="hljs language-c++">LSBBinaryTrie&lt;int, 30&gt; trie;
+trie.insert(5);  // 00101 (mod 8 = 5)
+trie.insert(13); // 01101 (mod 8 = 5)
+trie.insert(15); // 01111 (mod 8 = 7)
+trie.insert(21); // 10101 (mod 8 = 5)
+
+// 下位 3 ビット (つまり mod 2^3 = 8) が 5 と等しい要素数
+// 5, 13, 21 の 3 つが該当する
+cout &lt;&lt; trie.count_mod(5, 3) &lt;&lt; endl; // -&gt; 3
+
+// 全体に 2 (00010) を XOR したと仮定したとき、mod 8 が 7 となる要素数
+// 5^2=7, 13^2=15(mod 8=7), 15^2=13, 21^2=23(mod 8=7)
+cout &lt;&lt; trie.count_mod(7, 3, 2) &lt;&lt; endl; // -&gt; 3</code></pre>
+                            </details>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    3. mod 2^k での一括削除
+                                </summary>
+                                <pre><code class="hljs language-c++">LSBBinaryTrie&lt;int, 30&gt; trie;
+trie.insert(1); // 0001
+trie.insert(5); // 0101
+trie.insert(9); // 1001
+trie.insert(2); // 0010
+
+// 下位 2 ビット (mod 4) が 1 と等しい要素を全て削除
+// 1(mod4=1), 5(mod4=1), 9(mod4=1) が削除され、2 のみ残る
+int deleted = trie.erase_mod(1, 2);
+
+cout &lt;&lt; deleted &lt;&lt; " 個削除されました" &lt;&lt; endl; // -&gt; 3
+cout &lt;&lt; trie.size() &lt;&lt; endl; // -&gt; 1 (残りは 2 のみ)</code></pre>
+                            </details>
+
+                            <details class="snippet-details" >
+                                <summary>
+                                     4. 全要素への +1 操作 (インクリメント)
+                                </summary>
+                                <pre><code class="hljs language-c++">LSBBinaryTrie&lt;int, 30&gt; trie;
+trie.insert(3);
+trie.insert(7);
+
+// 木に入っている全要素の値を +1 する (O(MAX_LOG))
+trie.add_all_1();
+
+// 中身は 3 -&gt; 4, 7 -&gt; 8 に書き換わっている
+cout &lt;&lt; trie.count(4) &lt;&lt; endl; // -&gt; 1
+cout &lt;&lt; trie.count(8) &lt;&lt; endl; // -&gt; 1
+
+// ※ 何度も呼び出せば +X も可能ですが、X回分の呼び出し( X * MAX_LOG ) がかかります。</code></pre>
+                            </details>
+                        </div>
+                    </div>
+                    
                 </section>
 
                 <section id="sec-vector" class="article-section">
@@ -6891,6 +7938,9 @@ for (auto p : points) {
                             <li>
                                 <a href="#integer-partition">分割全列挙</a>
                             </li>
+                            <li>
+                                <a href="#set-partition">集合の分割全列挙</a>
+                            </li>
                                                         <li>
                                 <a href="#mos-algorithm-hilbert"
                                     >Mo's Algorithm</a
@@ -7982,6 +9032,171 @@ do {
     </div>
 </div>
 
+<div class="function-note" id="set-partition">
+    <div class="function-header">
+        <h3 class="function-name">
+            集合の分割全列挙 (dfs / recursion / 複合制約付き)
+        </h3>
+        <p class="function-purpose">
+            <span class="label">用途:</span>
+            N個の要素をいくつかの空でないグループに分ける方法（集合の分割）の全列挙。要素数やグループ数に柔軟な制約を指定可能。
+        </p>
+    </div>
+    <p>
+        <strong>計算量:</strong> 基本的にはベル数 $B_N$ 以下。条件が厳しい（グループ数や要素数の制約が狭い）ほど強力な枝刈りが効いて爆速で動作。
+        制約なしの場合、N ≤ 12 程度まで実用的。
+    </p>
+    <div
+        class="code-block"
+        data-custom-lines="true"
+        aria-label="Code block"
+    >
+        <div class="code-toolbar">
+            <span class="lang-label" aria-hidden="true"
+                >C++</span
+            >
+            <button
+                class="copy-btn"
+                type="button"
+                aria-label="Copy code"
+            >
+                Copy
+            </button>
+        </div>
+        <div class="code-wrap">
+            <pre><code class="hljs language-c++" spellcheck="false">struct SetPartition {
+    ll N;
+
+    SetPartition(ll n) : N(n) {}
+
+    // 集合 {0, 1, ..., N-1} の分割全列挙
+    // min_size   : 各グループの最小要素数 (デフォルト 1)
+    // max_size   : 各グループの最大要素数 (-1 の場合は制限なし)
+    // min_groups : 分割後の最小グループ数 (デフォルト 1)
+    // max_groups : 分割後の最大グループ数 (-1 の場合は制限なし)
+    vector&lt;vector&lt;vector&lt;ll&gt;&gt;&gt; enumerate(ll min_size = 1, ll max_size = -1, ll min_groups = 1, ll max_groups = -1) const {
+        if (max_size == -1) max_size = N;
+        if (max_groups == -1) max_groups = N;
+
+        vector&lt;vector&lt;vector&lt;ll&gt;&gt;&gt; res;
+        vector&lt;vector&lt;ll&gt;&gt; current_partition;
+
+        auto dfs = [&amp;](auto self, ll i) -&gt; void {
+            ll c = current_partition.size();
+            
+            // 枝刈り: 既存グループが最小サイズ(min_size)を満たすために必要な追加要素数
+            ll needed_for_existing = 0;
+            for (const auto&amp; g : current_partition) {
+                if ((ll)g.size() &lt; min_size) {
+                    needed_for_existing += min_size - (ll)g.size();
+                }
+            }
+            
+            // 枝刈り: グループ数の下限(min_groups)を満たすために新規作成すべきグループに必要な要素数
+            ll needed_for_new = max(0LL, min_groups - c) * min_size;
+            
+            // 残りの全要素を使っても条件を満たせない場合は探索打ち切り
+            if (needed_for_existing + needed_for_new &gt; N - i) return;
+
+            if (i == N) {
+                res.push_back(current_partition);
+                return;
+            }
+
+            // 1. 既存のグループのいずれかに追加する
+            for (size_t g = 0; g &lt; c; g++) {
+                if ((ll)current_partition[g].size() &lt; max_size) {
+                    current_partition[g].push_back(i);
+                    self(self, i + 1);
+                    current_partition[g].pop_back();
+                }
+            }
+
+            // 2. 新しいグループを作成して追加する
+            // 現在のグループ数が上限(max_groups)に達していない場合のみ作成可能
+            if (c &lt; max_groups) {
+                current_partition.push_back({i});
+                self(self, i + 1);
+                current_partition.pop_back();
+            }
+        };
+
+        dfs(dfs, 0);
+        return res;
+    }
+};
+</code></pre>
+        </div>
+    </div>
+    <p>
+        <strong>注意:</strong>
+        <code>min_size</code>, <code>max_size</code> は「1つのグループに入れる要素数」の制約。<code>min_groups</code>, <code>max_groups</code> は「作るグループの数」の制約です。不要な制約は <code>-1</code>（または省略）にすることで「指定なし」として扱えます。
+    </p>
+
+    <div
+        class="template-collection"
+        style="margin-top: 15px"
+    >
+        <h4
+            style="
+                margin-bottom: 5px;
+                font-size: 0.95em;
+                color: #555;
+            "
+        >
+            ▼ 使い方と応用パターン
+        </h4>
+
+        <details class="snippet-details">
+            <summary>
+                基本の使い方
+            </summary>
+            <p
+                style="
+                    padding: 0 10px;
+                    margin: 5px 0;
+                    font-size: 0.85em;
+                    color: #666;
+                "
+            >
+                できることは以下の通り：
+            </p>
+            <pre><code class="hljs language-c++">int main() {
+    ll N = 5;
+    SetPartition sp(N);
+
+    // 【パターン1】 指定なし（すべての分割を列挙）
+    vector&lt;vector&lt;vector&lt;ll&gt;&gt;&gt; res1 = sp.enumerate();
+
+    // 【パターン2】 各グループの要素数を 2個以上、3個以下 にする
+    // 引数: (min_size, max_size)
+    vector&lt;vector&lt;vector&lt;ll&gt;&gt;&gt; res2 = sp.enumerate(2, 3);
+
+    // 【パターン3】 グループの個数を 2個以上、3個以下 にする（要素数は自由）
+    // 引数: (min_size, max_size, min_groups, max_groups)
+    vector&lt;vector&lt;vector&lt;ll&gt;&gt;&gt; res3 = sp.enumerate(1, -1, 2, 3);
+
+    // 【パターン4】 「ちょうど2つのグループ」に分け、かつ「各グループ2人以上」にする
+    vector&lt;vector&lt;vector&lt;ll&gt;&gt;&gt; res4 = sp.enumerate(2, -1, 2, 2);
+
+
+    // データの取り出し方（例）
+    for (ll i = 0; i &lt; res4.size(); i++) {
+        // 1つの分割パターン
+        for (ll j = 0; j &lt; res4[i].size(); j++) {
+            // 1つのグループ
+            for (ll idx = 0; idx &lt; res4[i][j].size(); idx++) {
+                // 要素にアクセス
+                ll element = res4[i][j][idx];
+            }
+        }
+    }
+
+    return 0;
+}</code></pre>
+        </details>
+    </div>
+</div>
 
 
 <div class="function-note" id="mos-algorithm-hilbert">
@@ -19945,19 +21160,19 @@ while (timer.elapsed() &lt; TIME_LIMIT) {
                         </ul>
                     </nav>
 
-                    <div class="function-note" id="misc-pair-tuple">
+<div class="function-note" id="misc-pair-tuple-struct">
                         <div class="function-header">
                             <h3 class="function-name">
-                                pair / tuple / structured binding
+                                pair / tuple / struct / structured binding
                             </h3>
                             <p class="function-purpose">
                                 <span class="label">用途:</span>
-                                複数値をまとめて持つ
+                                複数値をまとめて持つ・辞書順でソートする
                             </p>
                         </div>
                         <p>
                             <strong>計算量:</strong> O(1)。
-                            グラフの辺や座標、複数返り値の受け取りで多用する。
+                            グラフの辺や座標、複数返り値の受け取り、イベントソートのキュー管理で多用する。
                         </p>
                         <div
                             class="code-block"
@@ -19984,23 +21199,33 @@ auto q = make_pair(3, 4);
 // 要素の読み出し
 cout &lt;&lt; p.first &lt;&lt; " " &lt;&lt; p.second &lt;&lt; "\n";
 
-// structured binding (C++17)
-auto [x, y] = p;
-cout &lt;&lt; x &lt;&lt; " " &lt;&lt; y &lt;&lt; "\n";
-
 // tuple の定義
 tuple&lt;ll, ll, ll&gt; t = {1, 2, 3};
 
-// tuple の分解
-auto [a, b, c] = t;
-
 // tuple の要素取得
-cout &lt;&lt; get&lt;0&gt;(t) &lt;&lt; " " &lt;&lt; get&lt;1&gt;(t) &lt;&lt; " " &lt;&lt; get&lt;2&gt;(t) &lt;&lt; "\n";</code></pre>
+cout &lt;&lt; get&lt;0&gt;(t) &lt;&lt; " " &lt;&lt; get&lt;1&gt;(t) &lt;&lt; " " &lt;&lt; get&lt;2&gt;(t) &lt;&lt; "\n";
+
+// {時間, イベント種類, ID} の順
+using Event = tuple&lt;ll, int, int&gt;;
+
+// structの定義と宇宙船演算子 (C++20: tupleの代用として推奨)
+struct Event {
+    ll time;
+    int type;
+    int id;
+    // メンバ変数の上から順に辞書式比較を自動生成
+    auto operator&lt;=&gt;(const Event&amp;) const = default;
+};
+Event ev = {10, 0, 5};
+
+// structured binding (C++17) : pair, tuple, struct 全てに対応
+auto [x, y] = p;
+auto [a, b, c] = t;
+auto [time, type, id] = ev;</code></pre>
                             </div>
                         </div>
                         <p>
-                            <strong>注意:</strong> 比較可能な型なら pair/tuple
-                            は辞書順で比較される。
+                            <strong>注意:</strong> pairやtupleは自動的に辞書順で比較される。C++20以降は <code>struct</code> 内に <code>auto operator&lt;=&gt;(const 型名&amp;) const = default;</code> を1行書くだけで全く同じように辞書順比較が有効になるため、要素名が明確な <code>struct</code> の利用がおすすめ。
                         </p>
                     </div>
 
