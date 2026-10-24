@@ -3001,7 +3001,7 @@ cout &lt;&lt; trie.count(8) &lt;&lt; endl; // -&gt; 1
                                 >
                             </li>
 
-                            <li><a href="#multi-vector">多次元 vector</a></li>
+                            <li><a href="#merge">merge</a></li>
                             <li><a href="#grid-rotate">グリッドの回転</a></li>
                             <li>
                                 <a href="#virtual-rotate">座標変換による回転</a>
@@ -3261,17 +3261,21 @@ ll idx2 = it2 - v.begin();</code></pre>
                         </p>
                     </div>
 
-                    <div class="function-note" id="multi-vector">
+<div class="function-note" id="merge">
                         <div class="function-header">
-                            <h3 class="function-name">多次元 vector</h3>
+                            <h3 class="function-name">
+                                merge
+                            </h3>
                             <p class="function-purpose">
                                 <span class="label">用途:</span>
-                                2次元・3次元配列を定義する
+                                2つのソート済み範囲をマージする
                             </p>
                         </div>
                         <p>
-                            <strong>計算量:</strong> 初期化は要素数に比例して
-                            O(HW) や O(XYZ)。 DPの土台として頻出。
+                            <strong>計算量:</strong> O(N1 + N2) （N1, N2はそれぞれの入力範囲の要素数）。
+                        </p>
+                        <p>
+                            <strong>注意点:</strong> 入力となる2つの範囲は<strong>事前にソートされている</strong>必要があります。また、出力先のコンテナには十分なサイズが確保されているか、<code>std::back_inserter</code> などを利用して動的に要素を追加する必要があります。
                         </p>
                         <div
                             class="code-block"
@@ -3291,9 +3295,23 @@ ll idx2 = it2 - v.begin();</code></pre>
                                 </button>
                             </div>
                             <div class="code-wrap">
-                                <pre><code class="hljs language-c++" spellcheck="false">vector&lt;vector&lt;ll&gt;&gt; a(h, vector&lt;ll&gt;(w, 0));
-vector&lt;vector&lt;long long&gt;&gt; dp(n, vector&lt;long long&gt;(m, INF));
-vector&lt;vector&lt;vector&lt;ll&gt;&gt;&gt; g(x, vector&lt;vector&lt;ll&gt;&gt;(y, vector&lt;ll&gt;(z)));</code></pre>
+                                <pre><code class="hljs language-c++" spellcheck="false">vector&lt;int&gt; v1 = {1, 3, 5};
+vector&lt;int&gt; v2 = {2, 4, 6};
+
+// パターン1: 事前に出力先のサイズを確保してマージ
+vector&lt;int&gt; res1(v1.size() + v2.size());
+merge(v1.begin(), v1.end(), v2.begin(), v2.end(), res1.begin());
+
+// パターン2: back_inserterを使って末尾に追加しながらマージ
+vector&lt;int&gt; res2;
+merge(v1.begin(), v1.end(), v2.begin(), v2.end(), back_inserter(res2));
+
+// パターン3: カスタム比較関数を用いる例（降順）
+// ※入力範囲 v3, v4 も同じ基準（降順）でソートされている必要があります
+vector&lt;int&gt; v3 = {5, 3, 1};
+vector&lt;int&gt; v4 = {6, 4, 2};
+vector&lt;int&gt; res3;
+merge(v3.begin(), v3.end(), v4.begin(), v4.end(), back_inserter(res3), greater&lt;&gt;());</code></pre>
                             </div>
                         </div>
                     </div>
@@ -21355,6 +21373,205 @@ ll y = clamp(x, 0, 100);</code></pre>
                         </div>
                     </div>
 
+<div class="function-note" id="safe-math">
+    <div class="function-header">
+        <h3 class="function-name">safe_math (安全な算術演算)</h3>
+        <p class="function-purpose">
+            <span class="label">用途:</span>
+            64bit整数（ll）のオーバーフローを自動検知・クリップし、掛け算・LCM・累乗などを安全に計算する
+        </p>
+    </div>
+
+    <p>
+        <strong>計算量:</strong>
+        <code>safe_add</code>・<code>safe_mul</code> O(1)、<code>safe_lcm</code> O(log(min(a, b)))、<code>safe_pow</code> O(log(exp))。空間計算量はいずれも O(1)。
+        GCC/Clang の組み込み関数を利用し、オーバーフローを高速に判定します。限界値（SAFE_INF / SAFE_MIN_INF）に到達した場合は値が飽和（クリップ）し、伝搬する設計です。
+    </p>
+
+    <div
+        class="code-block"
+        data-custom-lines="true"
+        aria-label="Code block"
+    >
+        <div class="code-toolbar">
+            <span class="lang-label" aria-hidden="true">C++</span>
+            <button
+                class="copy-btn"
+                type="button"
+                aria-label="Copy code"
+            >
+                Copy
+            </button>
+        </div>
+        <div class="code-wrap">
+            <pre><code class="hljs language-c++" spellcheck="false">// 安全な算術演算（オーバーフロー対策）
+// namespaceを使わず、関数名に safe_ の接頭辞をつけています
+
+constexpr long long SAFE_INF = std::numeric_limits&lt;long long&gt;::max();
+constexpr long long SAFE_MIN_INF = std::numeric_limits&lt;long long&gt;::min();
+
+// 内部判定用ラップ（GCC/Clang固有のビルトイン関数を利用）
+inline bool safe_check_add(long long a, long long b, long long&amp; res) {
+    return __builtin_add_overflow(a, b, &amp;res);
+}
+inline bool safe_check_mul(long long a, long long b, long long&amp; res) {
+    return __builtin_mul_overflow(a, b, &amp;res);
+}
+
+// 1. 安全な足し算（a + b）
+long long safe_add(long long a, long long b) {
+    if (a == SAFE_INF || b == SAFE_INF) return SAFE_INF;
+    if (a == SAFE_MIN_INF || b == SAFE_MIN_INF) return SAFE_MIN_INF;
+    long long res;
+    if (safe_check_add(a, b, res)) {
+        return (a &gt; 0) ? SAFE_INF : SAFE_MIN_INF;
+    }
+    return res;
+}
+
+// 2. 安全な引き算（a - b）
+long long safe_sub(long long a, long long b) {
+    if (b == SAFE_MIN_INF) return (a &gt;= 0) ? SAFE_INF : a - b; // 厳密な極値回避
+    return safe_add(a, -b);
+}
+
+// 3. 安全な掛け算（a * b）
+long long safe_mul(long long a, long long b) {
+    // どちらかが 0 なら 0
+    if (a == 0 || b == 0) return 0;
+    // どちらかが INF / MIN_INF の場合の伝搬
+    if (a == SAFE_INF || b == SAFE_INF || a == SAFE_MIN_INF || b == SAFE_MIN_INF) {
+        return ((a &gt; 0) == (b &gt; 0)) ? SAFE_INF : SAFE_MIN_INF;
+    }
+    long long res;
+    if (safe_check_mul(a, b, res)) {
+        return ((a ^ b) &gt;= 0) ? SAFE_INF : SAFE_MIN_INF;
+    }
+    return res;
+}
+
+// 4. 安全な最小公倍数（lcm(a, b)）
+long long safe_lcm(long long a, long long b) {
+    if (a == 0 || b == 0) return 0;
+    a = std::abs(a);
+    b = std::abs(b);
+    long long g = std::gcd(a, b);
+    // a / g は割り切れるのでオーバーフローしない、その結果と b を掛ける
+    return safe_mul(a / g, b);
+}
+
+// 5. 安全な累乗（base ^ exp）
+long long safe_pow(long long base, long long exp) {
+    if (exp &lt; 0) return 0; // 整数範囲での負の乗数は基本 0（1^-1 など例外は割愛）
+    if (exp == 0) return 1;
+    long long res = 1;
+    long long a = base;
+    while (exp &gt; 0) {
+        if (exp &amp; 1) res = safe_mul(res, a);
+        exp &gt;&gt;= 1;
+        if (exp &gt; 0) a = safe_mul(a, a);
+    }
+    return res;
+}
+
+// （参考）MSVCなど、__builtin_mul_overflow がない環境向けのフォールバック判定
+/*
+bool portable_check_mul(long long a, long long b, long long&amp; res) {
+    if (a != 0 &amp;&amp; b != 0) {
+        if (a &gt; 0 &amp;&amp; b &gt; 0 &amp;&amp; a &gt; SAFE_INF / b) return true;
+        if (a &gt; 0 &amp;&amp; b &lt; 0 &amp;&amp; b &lt; SAFE_MIN_INF / a) return true;
+        if (a &lt; 0 &amp;&amp; b &gt; 0 &amp;&amp; a &lt; SAFE_MIN_INF / b) return true;
+        if (a &lt; 0 &amp;&amp; b &lt; 0 &amp;&amp; a &lt; SAFE_INF / b) return true;
+    }
+    res = a * b;
+    return false;
+}
+*/</code></pre>
+        </div>
+    </div>
+
+    <div
+        class="template-collection"
+        style="margin-top: 15px"
+    >
+        <h4
+            style="
+                margin-bottom: 5px;
+                font-size: 0.95em;
+                color: #555;
+            "
+        >
+            ▼ 使い方と応用パターン
+        </h4>
+
+        <details class="snippet-details">
+            <summary>
+                基本の使い方（掛け算と LCM）
+            </summary>
+            <pre><code class="hljs language-c++" spellcheck="false">long long a = 1000000000000000000LL; // 10^18
+long long b = 10LL;
+
+// そのまま掛けるとオーバーフローして負の値などになるが、
+// safe_mul() を使えば LLONG_MAX にクリップされる
+long long ans_mul = safe_mul(a, b);
+if (ans_mul == SAFE_INF) {
+    cout &lt;&lt; "Overflow detected in multiplication!" &lt;&lt; endl;
+}
+
+long long c = 1000000000000000000LL; // 10^18
+long long d = 999999999999999999LL;  // 10^18 - 1
+// 互いに素な巨大な値のLCMをとっても安全
+long long ans_lcm = safe_lcm(c, d);
+if (ans_lcm == SAFE_INF) {
+    cout &lt;&lt; "Overflow detected in LCM!" &lt;&lt; endl;
+}</code></pre>
+        </details>
+
+        <details class="snippet-details">
+            <summary>
+                累乗（pow）による上限判定と二分探索での活用
+            </summary>
+            <pre><code class="hljs language-c++" spellcheck="false">// 例：「N ^ K が M を超えるか？」を調べたいとき
+long long N = 1000000;
+long long K = 4;
+long long M = 1000000000000000000LL;
+
+// そのまま pow(N, K) を計算すると確実にオーバーフローするが、
+// safe_pow なら SAFE_INF で止まるため、安全に大小比較が可能。
+long long val = safe_pow(N, K);
+
+if (val &gt; M) {
+    cout &lt;&lt; "N^K is strictly greater than M." &lt;&lt; endl;
+}
+
+// 二分探索内で「mid * 判定係数 &lt;= X」を調べる際にも
+// safe_mul(mid, factor) &lt;= X のように書くだけで
+// オーバーフローによるバグ（負数に反転して条件を満たしてしまう等）を防げる。</code></pre>
+        </details>
+
+        <details class="snippet-details">
+            <summary>
+                応用：INF 値のカスタマイズ（閾値を下げる）
+            </summary>
+            <pre><code class="hljs language-c++" spellcheck="false">// 競技プログラミングなどで、「10^18 を超えたら実質 INF 扱い」としたい場合は、
+// ラッパー関数で制限をかけます。
+
+const long long LIMIT = 1000000000000000000LL; // 10^18
+
+long long custom_mul(long long a, long long b) {
+    long long res = safe_mul(a, b);
+    if (res &gt; LIMIT) return LIMIT + 1; // 上限を設ける
+    return res;
+}</code></pre>
+        </details>
+    </div>
+
+    <p>
+        <strong>注意:</strong>
+        この実装は <code>__builtin_add_overflow</code> などの GCC/Clang 専用のビルトイン関数に依存しています。AtCoder をはじめとするほとんどの競技プログラミング環境（GCC環境）でそのまま動作しますが、MSVC（Visual Studio）などの環境でコンパイルエラーになる場合は、コメントアウトされている <code>portable_check_mul</code> などの代替ロジックを利用してください。
+    </p>
+</div>
+
                     <div class="function-note" id="misc-alphabet-lower">
                         <div class="function-header">
                             <h3 class="function-name">alphabet index (a-z)</h3>
@@ -21459,54 +21676,290 @@ cout << alphabetIndexUpper(c) << "\n"; // 3</code></pre>
                         </p>
                     </div>
 
-                    <div class="function-note" id="coordinate-compression">
-                        <div class="function-header">
-                            <h3 class="function-name">座標圧縮</h3>
-                            <p class="function-purpose">
-                                <span class="label">用途:</span>
-                                大きい値域を連番に潰して扱う
-                            </p>
-                        </div>
-                        <p>
-                            <strong>計算量:</strong> ソート O(N log
-                            N)、各値の変換 O(log N) または O(1)。
-                            区間や点を扱う問題で強い。
-                        </p>
-                        <div
-                            class="code-block"
-                            data-custom-lines="true"
-                            aria-label="Code block"
-                        >
-                            <div class="code-toolbar">
-                                <span class="lang-label" aria-hidden="true"
-                                    >C++</span
-                                >
-                                <button
-                                    class="copy-btn"
-                                    type="button"
-                                    aria-label="Copy code"
-                                >
-                                    Copy
-                                </button>
-                            </div>
-                            <div class="code-wrap">
-                                <pre><code class="hljs language-c++" spellcheck="false">vector&lt;long long&gt; xs = {10, 100, 1000};
-sort(xs.begin(), xs.end());
-xs.erase(unique(xs.begin(), xs.end()), xs.end());
+<div class="function-note" id="coordinate-compression">
+    <div class="function-header">
+        <h3 class="function-name">座標圧縮</h3>
+        <p class="function-purpose">
+            <span class="label">用途:</span>
+            大きい値域を連番に変換し、配列・BIT・セグメント木などで効率的に扱う
+        </p>
+    </div>
 
-auto get_id = [&](long long x) {
-    return lower_bound(xs.begin(), xs.end(), x) - xs.begin();
+    <p>
+        <strong>計算量:</strong>
+        構築 O(N log N)、座標 ID の取得・境界検索 O(log N)、
+        圧縮後の値の取得 O(1)。空間計算量は O(N)。
+        重複値の除去、元の値への復元、区間検索にも対応する。
+    </p>
+
+    <div
+        class="code-block"
+        data-custom-lines="true"
+        aria-label="Code block"
+    >
+        <div class="code-toolbar">
+            <span class="lang-label" aria-hidden="true">C++</span>
+            <button
+                class="copy-btn"
+                type="button"
+                aria-label="Copy code"
+            >
+                Copy
+            </button>
+        </div>
+        <div class="code-wrap">
+            <pre><code class="hljs language-c++" spellcheck="false">// 座標圧縮
+template &lt;class T&gt;
+struct CoordinateCompression {
+    vector&lt;T&gt; xs;  // 圧縮対象の値（構築後は昇順・重複なし）
+    bool built = false;
+
+    // 1. 値を 1 つ追加
+    void add(const T& x) {
+        xs.push_back(x);
+        built = false;
+    }
+
+    // 2. 配列などの範囲をまとめて追加
+    template &lt;class It&gt;
+    void add_all(It first, It last) {
+        xs.insert(xs.end(), first, last);
+        built = false;
+    }
+
+    // 3. ソートして重複を除去し、圧縮を確定
+    void build() {
+        sort(xs.begin(), xs.end());
+        xs.erase(unique(xs.begin(), xs.end()), xs.end());
+        built = true;
+    }
+
+    // 4. 圧縮後の座標数
+    int size() const {
+        assert(built);
+        return (int)xs.size();
+    }
+
+    // 5. 圧縮後の座標が空かどうか
+    bool empty() const {
+        assert(built);
+        return xs.empty();
+    }
+
+    // 6. 値 x の圧縮 ID を取得
+    //    登録済みなら 0-indexed の ID、未登録なら -1
+    int id(const T& x) const {
+        assert(built);
+
+        auto it = lower_bound(xs.begin(), xs.end(), x);
+        if (it == xs.end() || *it != x) return -1;
+
+        return (int)(it - xs.begin());
+    }
+
+    // 7. x 以上となる最初の座標の位置
+    //    つまり、x 未満の異なる座標の個数
+    int lower(const T& x) const {
+        assert(built);
+        return (int)(
+            lower_bound(xs.begin(), xs.end(), x) - xs.begin()
+        );
+    }
+
+    // 8. x より大きい最初の座標の位置
+    //    つまり、x 以下の異なる座標の個数
+    int upper(const T& x) const {
+        assert(built);
+        return (int)(
+            upper_bound(xs.begin(), xs.end(), x) - xs.begin()
+        );
+    }
+
+    // 9. 値 x が圧縮対象に登録されているか
+    bool contains(const T& x) const {
+        return id(x) != -1;
+    }
+
+    // 10. 圧縮 ID から元の値を取得
+    const T& value(int i) const {
+        assert(built);
+        return xs.at(i);
+    }
+
+    // 11. 元の値が [l, r] に含まれる座標の位置範囲
+    //     戻り値は半開区間 [first, second)
+    //     l や r 自体が登録されていなくても使用可能
+    pair&lt;int, int&gt; range(const T& l, const T& r) const {
+        assert(built);
+
+        if (r &lt; l) {
+            int p = lower(l);
+            return {p, p};
+        }
+
+        return {lower(l), upper(r)};
+    }
+};</code></pre>
+        </div>
+    </div>
+
+    <div
+        class="template-collection"
+        style="margin-top: 15px"
+    >
+        <h4
+            style="
+                margin-bottom: 5px;
+                font-size: 0.95em;
+                color: #555;
+            "
+        >
+            ▼ 使い方と応用パターン
+        </h4>
+
+        <details class="snippet-details">
+            <summary>
+                基本の使い方（圧縮 ID の取得・元の値への復元・未登録判定）
+            </summary>
+            <pre><code class="hljs language-c++" spellcheck="false">// 圧縮したい配列
+vector&lt;long long&gt; a = {
+    1000000000LL, -5, 100, -5, 42
 };
 
-for (auto &x : xs)
-    x = get_id(x);</code></pre>
-                            </div>
-                        </div>
-                        <p>
-                            <strong>注意:</strong>
-                            <code>unique</code> の前にソートが必要。
-                        </p>
-                    </div>
+// 座標圧縮を構築
+CoordinateCompression&lt;long long&gt; cc;
+cc.add_all(a.begin(), a.end());
+cc.build();
+
+// 座標は昇順に {-5, 42, 100, 1000000000}
+// 元の値が同じなら、圧縮 ID も同じになる
+for (long long x : a) {
+    cout &lt;&lt; cc.id(x) &lt;&lt; " ";
+}
+// 出力: 3 0 2 0 1
+
+// 圧縮 ID から元の値を復元
+cout &lt;&lt; cc.value(0) &lt;&lt; endl; // -5
+cout &lt;&lt; cc.value(2) &lt;&lt; endl; // 100
+
+// 登録されていない値は -1
+cout &lt;&lt; cc.id(777) &lt;&lt; endl; // -1
+
+// 登録済みかどうかを判定
+cout &lt;&lt; cc.contains(42) &lt;&lt; endl;  // 1 (true)
+cout &lt;&lt; cc.contains(777) &lt;&lt; endl; // 0 (false)
+
+// 圧縮後の座標数
+cout &lt;&lt; cc.size() &lt;&lt; endl; // 4</code></pre>
+        </details>
+
+        <details class="snippet-details">
+            <summary>
+                区間 [L, R] の座標を取得する（lower・upper・range）
+            </summary>
+            <pre><code class="hljs language-c++" spellcheck="false">CoordinateCompression&lt;long long&gt; cc;
+
+// 座標として使う値を登録
+vector&lt;long long&gt; xs = {10, 100, 1000, 10000};
+cc.add_all(xs.begin(), xs.end());
+cc.build();
+
+// x 未満の異なる座標の個数
+cout &lt;&lt; cc.lower(100) &lt;&lt; endl; // 1
+
+// x 以下の異なる座標の個数
+cout &lt;&lt; cc.upper(100) &lt;&lt; endl; // 2
+
+// 元の値が [50, 1000] に含まれる座標の範囲
+auto p = cc.range(50, 1000);
+int left = p.first;
+int right = p.second;
+
+// 圧縮 ID の範囲 [left, right) を走査
+// 100, 1000 が出力される
+for (int i = left; i &lt; right; ++i) {
+    cout &lt;&lt; cc.value(i) &lt;&lt; " ";
+}
+cout &lt;&lt; endl;
+
+// left と right は半開区間なので、
+// 対応する座標の個数は right - left</code></pre>
+        </details>
+
+        <details class="snippet-details">
+            <summary>
+                応用：頻度配列と累積和で区間内の要素数を数える
+            </summary>
+            <pre><code class="hljs language-c++" spellcheck="false">vector&lt;long long&gt; a = {2, 5, 2, 10, 7, 5};
+
+CoordinateCompression&lt;long long&gt; cc;
+cc.add_all(a.begin(), a.end());
+cc.build();
+
+// 圧縮座標ごとの出現回数
+vector&lt;long long&gt; freq(cc.size(), 0);
+
+for (long long x : a) {
+    ++freq[cc.id(x)];
+}
+
+// 累積和（pref[i] は ID が i 未満の要素数）
+vector&lt;long long&gt; pref(cc.size() + 1, 0);
+
+for (int i = 0; i &lt; cc.size(); ++i) {
+    pref[i + 1] = pref[i] + freq[i];
+}
+
+// 元の値が [L, R] に含まれる要素数
+long long L = 3, R = 8;
+auto p = cc.range(L, R);
+
+int left = p.first;
+int right = p.second;
+
+long long count = pref[right] - pref[left];
+cout &lt;&lt; count &lt;&lt; endl; // 3（5, 7, 5）</code></pre>
+        </details>
+
+        <details class="snippet-details">
+            <summary>
+                応用：BIT・セグメント木と組み合わせる
+            </summary>
+            <pre><code class="hljs language-c++" spellcheck="false">// 座標圧縮後の ID を BIT やセグメント木の添字として使う
+vector&lt;long long&gt; a = {1000000000LL, 10, 500, 10};
+
+CoordinateCompression&lt;long long&gt; cc;
+cc.add_all(a.begin(), a.end());
+cc.build();
+
+// 圧縮後の座標数だけデータ構造を用意
+// FenwickTree&lt;long long&gt; bit(cc.size()); など
+//
+// 値 x を更新するとき：
+// int i = cc.id(x);
+// bit.add(i, delta);
+//
+// 元の値が x 以下の要素を集計するとき、
+// 対象の ID 範囲は [0, cc.upper(x))。
+//
+// BIT が 1-indexed の場合は、更新や集計の添字を
+// データ構造の仕様に合わせて調整する。</code></pre>
+        </details>
+    </div>
+
+    <p>
+        <strong>注意:</strong>
+        値をすべて登録してから <code>build()</code> を呼ぶこと。
+        構築後に <code>add()</code> や <code>add_all()</code> を呼んだ場合も、
+        再度 <code>build()</code> が必要。
+        <code>id(x)</code> は登録済みの値に対してのみ有効な ID を返し、
+        未登録の値には <code>-1</code> を返す。
+        一方、<code>lower()</code>・<code>upper()</code>・<code>range()</code> は、
+        登録されていない区間の境界値にも使用できる。
+        また、<code>range(l, r)</code> の返り値は
+        <code>[first, second)</code> の半開区間である。
+    </p>
+</div>
 
                     <div class="function-note" id="run-length-encoding">
                         <div class="function-header">
