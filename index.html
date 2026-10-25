@@ -498,6 +498,7 @@ cin &gt;&gt; d;</code></pre>
                             <li><a href="#levenshtein-distance">Levenshtein Distance</a></li>
                             
                             <li><a href="#z-algorithm">Z-Algorithm</a></li>
+                            <li><a href="#manacher">Manacher（回分判定）</a></li>
                             <li>
                                 <a href="#suffix-array">ACL Suffix Array</a>
                             </li>
@@ -1100,6 +1101,173 @@ for (ll i = 1; i &lt; n; i++) {
                             </details>
                         </div>
                     </div>
+
+<div class="function-note" id="manacher">
+                        <div class="function-header">
+                            <h3 class="function-name">Manacher's Algorithm</h3>
+                            <p class="function-purpose">
+                                <span class="label">用途:</span>
+                                O(N)での最長回文部分文字列の検出、各文字を中心とする回文の半径の計算
+                            </p>
+                        </div>
+                        <p>
+                            <strong>計算量:</strong> O(N)。 文字列 S の各文字（または要素）を中心とした最長回文の半径（中心から端までの文字数）を線形時間で構築する。ACL不要。
+                        </p>
+                        <div
+                            class="code-block"
+                            data-custom-lines="true"
+                            aria-label="Code block"
+                        >
+                            <div class="code-toolbar">
+                                <span class="lang-label" aria-hidden="true"
+                                    >C++</span
+                                >
+                                <button
+                                    class="copy-btn"
+                                    type="button"
+                                    aria-label="Copy code"
+                                >
+                                    Copy
+                                </button>
+                            </div>
+                            <div class="code-wrap">
+                                <pre><code class="hljs language-c++" spellcheck="false">// S の各文字を中心とする最長回文の半径を O(N) で求める構造体
+struct Manacher {
+  ll n;
+  vector&lt;ll&gt; R;
+
+  // 通常の文字列用
+  Manacher(const string&amp; s) {
+    build(s);
+  }
+
+  // 複数文字列を扱う場合や数列用、ダミー文字挿入後の配列用
+  template &lt;typename T&gt;
+  Manacher(const vector&lt;T&gt;&amp; v) {
+    build(v);
+  }
+
+private:
+  template &lt;typename Container&gt;
+  void build(const Container&amp; s) {
+    n = s.size();
+    R.assign(n, 0);
+    ll i = 0, j = 0;
+    while (i &lt; n) {
+      while (i - j &gt;= 0 &amp;&amp; i + j &lt; n &amp;&amp; s[i - j] == s[i + j]) ++j;
+      R[i] = j;
+      ll k = 1;
+      while (i - k &gt;= 0 &amp;&amp; i + k &lt; n &amp;&amp; k + R[i - k] &lt; j) {
+        R[i + k] = R[i - k];
+        ++k;
+      }
+      i += k;
+      j -= k;
+    }
+  }
+};</code></pre>
+                            </div>
+                        </div>
+                        <p
+                            class="automaton-variables-note"
+                            style="line-height: 1.6; color: #333"
+                        >
+                            <strong>【構造体を構成する変数】</strong><br />
+                            ・<code
+                                style="
+                                    background: #f4f4f4;
+                                    padding: 2px 4px;
+                                    border-radius: 4px;
+                                "
+                                >n</code
+                            >
+                            : 対象の文字列（または配列）全体の長さ（整数）<br />
+                            ・<code
+                                style="
+                                    background: #f4f4f4;
+                                    padding: 2px 4px;
+                                    border-radius: 4px;
+                                "
+                                >R</code
+                            >
+                            : Manacherによって計算された配列本体。R[i]には S[i] を中心とする最長回文の半径（自身を含め片側に何文字延びるか）が格納される。<br />
+                        </p>
+
+                        <div
+                            class="template-collection"
+                            style="margin-top: 15px"
+                        >
+                            <h4
+                                style="
+                                    margin-bottom: 5px;
+                                    font-size: 0.95em;
+                                    color: #555;
+                                "
+                            >
+                                ▼ 応用テンプレート（コピペ＆即使用用）
+                            </h4>
+
+                            <details class="snippet-details">
+                                <summary>基本的な最長回文半径の取得（奇数長）</summary>
+                                <pre><code class="hljs language-c++">string S = "abaaab";
+Manacher man(S);
+
+// man.R は {1, 2, 1, 2, 3, 1} になる
+// S[4] ('a') を中心とする回文は "baaab" なので半径は 3 (man.R[4] = 3)
+// 各 i について、回文の実際の長さは 2 * man.R[i] - 1 となる</code></pre>
+                            </details>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    偶数長の回文も検出する (ダミー文字の挿入)
+                                </summary>
+                                <pre><code class="hljs language-c++">string S = "abba"; 
+// 通常の Manacher では各文字を中心とする奇数長しか取れないため、
+// 文字の間にダミー文字（Sに含まれない文字）を挟むことで偶数長回文の中心を作る
+
+vector&lt;ll&gt; V;
+for (char c : S) {
+  V.push_back(c);
+  V.push_back(-1); // ダミー文字（文字コードと被らない値）
+}
+V.pop_back(); // 最後のダミー文字は削除 (a, -1, b, -1, b, -1, a) になる
+
+Manacher man(V);
+
+// V における各中心の半径 man.R[i] から、元の文字列での回文長は (man.R[i] + 1) / 2 となる
+ll max_len = 0;
+for (ll i = 0; i &lt; man.n; i++) {
+  ll palin_len = man.R[i]; // ダミー文字を挟んだ状態での半径と、元の文字列での回文長は一致する（※番兵なし構築の場合）
+  
+  // 例: V[3] (-1, 中心は "bb" の間) の半径は 4 (b, -1, b, -1) -> 実際の長さは 4
+  if (palin_len &gt; max_len) {
+      max_len = palin_len;
+  }
+}
+// max_len -&gt; 4 ("abba")</code></pre>
+                            </details>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    文字列の部分区間が回文かどうかの判定 O(1)
+                                </summary>
+                                <pre><code class="hljs language-c++">string S = "abacaba";
+Manacher man(S);
+
+// 区間 [l, r) （元の文字列における 0-indexed）が回文か判定する関数
+// 奇数長・偶数長問わず対応するには、上記のようにダミー文字を挟んだ配列 V を用意し、
+// それに対して Manacher を構築しておく必要がある。
+
+// ※ダミー文字を挟んだ長さ 2|S|-1 の配列で構築した場合：
+// 元の区間 [l, r) の中心は V における l + r - 1 の位置になる
+// したがって、man.R[l + r - 1] &gt;= r - l であれば回文である。
+
+auto is_palindrome = [&amp;](ll l, ll r, const Manacher&amp; m_dummy) {
+  return m_dummy.R[l + r - 1] &gt;= r - l;
+};</code></pre>
+                            </details>
+                        </div>
+                    </div>                    
 
                     <div class="function-note" id="suffix-array">
                         <div class="function-header">
@@ -14557,19 +14725,19 @@ vector&lt;vector&lt;ll&gt;&gt; connected_components(
                         </p>
                     </div>
 
-                    <div class="function-note" id="graph-scc">
+<div class="function-note" id="graph-scc">
                         <div class="function-header">
                             <h3 class="function-name">
                                 Strongly Connected Components (SCC)
                             </h3>
                             <p class="function-purpose">
                                 <span class="label">用途:</span>
-                                有向グラフの強連結成分分解・閉路検出・DAG化
+                                有向グラフの強連結成分分解・閉路検出・DAG化・同値類判定
                             </p>
                         </div>
                         <p>
                             <strong>計算量:</strong> O(V + E)。
-                            2回のDFS（コサラジュのアルゴリズム）を用いて有向グラフを強連結成分に分解する。
+                            コサラジュのアルゴリズム（2回のDFS）を用いて有向グラフを強連結成分に分解し、成分を縮約したDAGを構築する。
                         </p>
                         <div
                             class="code-block"
@@ -14589,62 +14757,140 @@ vector&lt;vector&lt;ll&gt;&gt; connected_components(
                                 </button>
                             </div>
                             <div class="code-wrap">
-                                <pre><code class="hljs language-c++" spellcheck="false">// 1回目のDFS: 帰りがけ順（バックトラック時）に頂点を記録
-void SCC1(const vvl &amp;graph, vb &amp;seen, vl &amp;V, ll v) {
-    seen[v] = true;
-    for (ll next : graph[v]) {
-        if (seen[next] == true) {
-            continue;
+                                <pre><code class="hljs language-c++" spellcheck="false">// SCC (強連結成分分解) の構造体
+struct SCC {
+    ll n;
+    vector&lt;vector&lt;ll&gt;&gt; g, rg;
+    
+    // 構築後に利用可能なデータ
+    vector&lt;ll&gt; comp;          // comp[i]: 頂点 i が属するSCCのグループID (0-indexed, トポロジカル順)
+    vector&lt;vector&lt;ll&gt;&gt; scc;   // scc[i]: グループ i に含まれる頂点のリスト
+    vector&lt;vector&lt;ll&gt;&gt; dag;   // dag[i]: グループ i から遷移可能なグループIDのリスト (縮約後のDAG)
+
+    vector&lt;ll&gt; order;
+    vector&lt;bool&gt; used;
+
+    // 初期化
+    SCC(ll n) : n(n), g(n), rg(n), comp(n, -1), used(n, false) {}
+
+    // 有向辺の追加 (u -&gt; v)
+    void add_edge(ll u, ll v) {
+        g[u].push_back(v);
+        rg[v].push_back(u);
+    }
+
+    // 1回目のDFS
+    void dfs1(ll v) {
+        used[v] = true;
+        for (ll next : g[v]) {
+            if (!used[next]) dfs1(next);
         }
-        SCC1(graph, seen, V, next);
+        order.push_back(v);
     }
-    V.push_back(v);
-}
 
-// 2回目のDFS: 逆方向グラフを用いて成分ごとに頂点を回収
-void SCC2(const vvl &amp;graph, vb &amp;seen, ll v, vl &amp;SCC_part) {
-    seen[v] = true;
-    for (ll next : graph[v]) {
-        if (seen[next] == true) {
-            continue;
+    // 2回目のDFS
+    void dfs2(ll v, ll k) {
+        used[v] = true;
+        comp[v] = k;
+        scc.back().push_back(v);
+        for (ll next : rg[v]) {
+            if (!used[next]) dfs2(next, k);
         }
-        SCC2(graph, seen, next, SCC_part);
     }
-    SCC_part.push_back(v);
-}
 
-// =====ここから使い方=====
-vvl G1(N), G2(N); // G1は順方向、G2は逆方向の隣接リスト
-vb seen1(N, false);
-vl V;
-rep(i, N) {
-    if (seen1[i] == false) {
-        SCC1(G1, seen1, V, i);
+    // SCCの構築・DAGの生成 (すべての辺を追加し終えた後に呼ぶ)
+    void build() {
+        for (ll i = 0; i &lt; n; i++) {
+            if (!used[i]) dfs1(i);
+        }
+        
+        used.assign(n, false);
+        ll k = 0;
+        for (ll i = (ll)order.size() - 1; i &gt;= 0; i--) {
+            ll v = order[i];
+            if (!used[v]) {
+                scc.push_back({});
+                dfs2(v, k++);
+            }
+        }
+
+        // DAGの構築 (SCCで縮約した後のグラフ)
+        dag.resize(k);
+        for (ll u = 0; u &lt; n; u++) {
+            for (ll v : g[u]) {
+                ll x = comp[u];
+                ll y = comp[v];
+                if (x != y) {
+                    dag[x].push_back(y);
+                }
+            }
+        }
+        
+        // DAGの重複辺を削除
+        for (ll i = 0; i &lt; k; i++) {
+            sort(dag[i].begin(), dag[i].end());
+            dag[i].erase(unique(dag[i].begin(), dag[i].end()), dag[i].end());
+        }
     }
-}
 
-reverse(V.begin(), V.end());
-
-vvl SCC;
-vb seen2(N, false);
-rep(i, N) {
-    if (seen2[V[i]] == false) {
-        vl SCC_part;
-        SCC2(G2, seen2, V[i], SCC_part);
-        SCC.push_back(SCC_part);
+    // Union-Find的な機能: 頂点 u と v が同じ強連結成分に属するか判定
+    bool same(ll u, ll v) {
+        return comp[u] == comp[v];
     }
-}
-
-// SCCのi行目がi番目の強連結成分の要素</code></pre>
+};</code></pre>
                             </div>
                         </div>
-                        <p>
-                            <strong>注意:</strong>
-                            二次元配列
-                            <code>SCC</code>
-                            に格納されるグループの順序は、自動的に「トポロジカルソート順（上流から下流）」になる。成分を潰してDAGとしてDPを回す際は、そのまま
-                            <code>0</code> から順に遷移すればよい。
-                        </p>
+
+                        <div
+                            class="template-collection"
+                            style="margin-top: 15px"
+                        >
+                            <h4
+                                style="
+                                    margin-bottom: 5px;
+                                    font-size: 0.95em;
+                                    color: #555;
+                                "
+                            >
+                                ▼ 使い方と応用パターン
+                            </h4>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    基本の使い方（構築・同一グループ判定・DAGの利用）
+                                </summary>
+                                <pre><code class="hljs language-c++">ll N = 6;
+SCC scc(N);
+
+// 有向辺を張る
+scc.add_edge(0, 1);
+scc.add_edge(1, 2);
+scc.add_edge(2, 0); // 0-1-2 は互いに行き来可能 (閉路)
+scc.add_edge(2, 3);
+scc.add_edge(3, 4);
+scc.add_edge(4, 5);
+scc.add_edge(5, 3); // 3-4-5 も互いに行き来可能
+
+// 必ず最後に build() を呼ぶ
+scc.build();
+
+// 1. Union-Find 的な使い方 (互いに行き来可能か判定)
+cout &lt;&lt; (scc.same(0, 2) ? "Yes" : "No") &lt;&lt; endl; // Yes
+cout &lt;&lt; (scc.same(0, 3) ? "Yes" : "No") &lt;&lt; endl; // No
+
+// 2. 頂点が属する成分番号の取得
+// 番号はトポロジカルソート順（上流から下流）に振られる
+// 葉からDPするときは、番号が大きい順に見れば良い
+cout &lt;&lt; "頂点3のグループID: " &lt;&lt; scc.comp[3] &lt;&lt; endl;
+
+// 3. 縮約後のDAGを使った遷移 (DPなどに活用)
+// scc.dag[i] には、グループiから直接行けるグループIDが入る
+ll group0 = scc.comp[0];
+for (ll next_group : scc.dag[group0]) {
+    cout &lt;&lt; "Group " &lt;&lt; group0 &lt;&lt; " -&gt; Group " &lt;&lt; next_group &lt;&lt; endl;
+}</code></pre>
+                            </details>
+                        </div>
                     </div>
 
 <div class="function-note" id="strongly-connected-orientation">
