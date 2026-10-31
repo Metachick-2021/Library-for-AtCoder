@@ -13445,6 +13445,16 @@ cout &lt;&lt; "x = 50 の最小値: " &lt;&lt; lct_static.query(50) &lt;&lt; end
                                 >
                             </li>
                             <li>
+                                <a href="#graph-tree-center"
+                                    >Tree Center (木の中心)</a
+                                >
+                            </li>
+                            <li>
+                                <a href="#graph-tree-centroid"
+                                    >Tree Centroid (木の重心)</a
+                                >
+                            </li>
+                            <li>
                                 <a href="#graph-topological-sort"
                                     >Topological Sort</a
                                 >
@@ -14588,6 +14598,335 @@ ll get_forest_diameter(ll n, const vector&lt;vector&lt;ll&gt;&gt; &graph) {
                             出力する長さはパスの長さ =
                             辺の個数であることに注意！グラフが複数の独立した木（非連結グラフ）で構成されている場合でも正しく動作する。
                         </p>
+                    </div>
+
+<div class="function-note" id="graph-tree-center">
+                        <div class="function-header">
+                            <h3 class="function-name">
+                                Tree Center (木の中心)
+                            </h3>
+                            <p class="function-purpose">
+                                <span class="label">用途:</span>
+                                木構造において、最も遠い頂点までの距離が最小となる頂点（中心）の取得
+                            </p>
+                        </div>
+                        <p>
+                            <strong>計算量:</strong> O(V)。
+                            木の直径となるパスを求め、その中点となる頂点を中心として返します。木の中心は必ず1つまたは2つ存在します。
+                        </p>
+                        <div
+                            class="code-block"
+                            data-custom-lines="true"
+                            aria-label="Code block"
+                        >
+                            <div class="code-toolbar">
+                                <span class="lang-label" aria-hidden="true"
+                                    >C++</span
+                                >
+                                <button
+                                    class="copy-btn"
+                                    type="button"
+                                    aria-label="Copy code"
+                                >
+                                    Copy
+                                </button>
+                            </div>
+                            <div class="code-wrap">
+                                <pre><code class="hljs language-c++" spellcheck="false">// 木の中心を求める（戻り値は1つまたは2つの頂点）
+vector&lt;ll&gt; get_tree_center(ll n, const vector&lt;vector&lt;ll&gt;&gt; &graph) {
+  if (n &lt;= 1) return {0};
+
+  // 1回目のBFS（適当な頂点0から最も遠い頂点uを探す）
+  vector&lt;ll&gt; dist1(n, -1);
+  queue&lt;ll&gt; que;
+  dist1[0] = 0;
+  que.push(0);
+  ll u = 0;
+  while (!que.empty()) {
+    ll v = que.front();
+    que.pop();
+    if (dist1[v] &gt; dist1[u]) u = v;
+    for (ll next_v : graph[v]) {
+      if (dist1[next_v] == -1) {
+        dist1[next_v] = dist1[v] + 1;
+        que.push(next_v);
+      }
+    }
+  }
+
+  // 2回目のBFS（uから最も遠い頂点wを探しつつ、親を記録してパスを復元可能にする）
+  vector&lt;ll&gt; dist2(n, -1);
+  vector&lt;ll&gt; parent(n, -1);
+  dist2[u] = 0;
+  que.push(u);
+  ll w = u;
+  while (!que.empty()) {
+    ll v = que.front();
+    que.pop();
+    if (dist2[v] &gt; dist2[w]) w = v;
+    for (ll next_v : graph[v]) {
+      if (dist2[next_v] == -1) {
+        dist2[next_v] = dist2[v] + 1;
+        parent[next_v] = v;
+        que.push(next_v);
+      }
+    }
+  }
+
+  // u から w へのパス（直径）を復元
+  vector&lt;ll&gt; path;
+  ll curr = w;
+  while (curr != -1) {
+    path.push_back(curr);
+    curr = parent[curr];
+  }
+
+  // パスの中点が中心となる
+  vector&lt;ll&gt; centers;
+  ll len = path.size();
+  if (len % 2 == 1) {
+    centers.push_back(path[len / 2]);
+  } else {
+    centers.push_back(path[len / 2 - 1]);
+    centers.push_back(path[len / 2]);
+  }
+  return centers;
+}</code></pre>
+                            </div>
+                        </div>
+
+                        <div
+                            class="template-collection"
+                            style="margin-top: 15px"
+                        >
+                            <h4
+                                style="
+                                    margin-bottom: 5px;
+                                    font-size: 0.95em;
+                                    color: #555;
+                                "
+                            >
+                                ▼ 使い方と応用パターン
+                            </h4>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    基本の使い方（木の中心の取得）
+                                </summary>
+                                <pre><code class="hljs language-c++">ll n = 5;
+vector&lt;vector&lt;ll&gt;&gt; graph(n);
+// 辺の追加 (0-1, 1-2, 2-3, 2-4 のような構成)
+graph[0].push_back(1); graph[1].push_back(0);
+graph[1].push_back(2); graph[2].push_back(1);
+graph[2].push_back(3); graph[3].push_back(2);
+graph[2].push_back(4); graph[4].push_back(2);
+
+vector&lt;ll&gt; centers = get_tree_center(n, graph);
+
+cout &lt;&lt; "木の中心: ";
+for (ll c : centers) {
+  cout &lt;&lt; c &lt;&lt; " ";
+}
+cout &lt;&lt; endl;
+// 直径パスが偶数長なら中心は1つ、奇数長なら2つ出力されます。</code></pre>
+                            </details>
+                            
+                            <details class="snippet-details">
+                                <summary>
+                                    応用例：木の同型判定 (Tree Isomorphism)
+                                </summary>
+                                <pre><code class="hljs language-c++">// 部分木を括弧の文字列として表現しハッシュ化する
+// 計算量：O(V log V) ※文字列結合・ソートのオーバーヘッドを含む
+string get_tree_hash(ll v, ll p, const vector&lt;vector&lt;ll&gt;&gt; &graph) {
+  vector&lt;string&gt; child_hashes;
+  for (ll next_v : graph[v]) {
+    if (next_v == p) continue;
+    child_hashes.push_back(get_tree_hash(next_v, v, graph));
+  }
+  // 順序に依存しないようソートする
+  sort(child_hashes.begin(), child_hashes.end());
+  
+  string res = "(";
+  for (const string &s : child_hashes) res += s;
+  res += ")";
+  return res;
+}
+
+// 2つの木が同型か判定する
+// 計算量：O(V log V)
+bool is_isomorphic(ll n, const vector&lt;vector&lt;ll&gt;&gt; &graph1, const vector&lt;vector&lt;ll&gt;&gt; &graph2) {
+  vector&lt;ll&gt; centers1 = get_tree_center(n, graph1);
+  vector&lt;ll&gt; centers2 = get_tree_center(n, graph2);
+  
+  // 中心の個数が異なる場合は同型ではない
+  if (centers1.size() != centers2.size()) return false;
+  
+  // 木1の1つ目の中心を根としたハッシュ
+  string hash1 = get_tree_hash(centers1[0], -1, graph1);
+  
+  // 木2の1つ目の中心を根としたハッシュ
+  string hash2_a = get_tree_hash(centers2[0], -1, graph2);
+  if (hash1 == hash2_a) return true;
+  
+  // 中心が2つある場合は、もう一方も試す
+  if (centers2.size() == 2) {
+    string hash2_b = get_tree_hash(centers2[1], -1, graph2);
+    if (hash1 == hash2_b) return true;
+  }
+  
+  return false;
+}</code></pre>
+                            </details>
+                        </div>
+                    </div>
+
+                    <div class="function-note" id="graph-tree-centroid">
+                        <div class="function-header">
+                            <h3 class="function-name">Tree Centroid (木の重心)</h3>
+                            <p class="function-purpose">
+                                <span class="label">用途:</span>
+                                頂点を取り除いたとき、残りの各連結成分のサイズが全体の半分以下になる頂点（重心）の取得
+                            </p>
+                        </div>
+                        <p>
+                            <strong>計算量:</strong> O(V)。
+                            任意の頂点を根としてDFSを行い、各部分木のサイズを計算しながら条件を満たす頂点を探します。重心分解（Centroid Decomposition）などの前処理としても使われ、重心は必ず1つまたは2つ存在します。
+                        </p>
+
+                        <div
+                            class="code-block"
+                            data-custom-lines="true"
+                            aria-label="Code block"
+                        >
+                            <div class="code-toolbar">
+                                <span class="lang-label" aria-hidden="true"
+                                    >C++</span
+                                >
+                                <button
+                                    class="copy-btn"
+                                    type="button"
+                                    aria-label="Copy code"
+                                >
+                                    Copy
+                                </button>
+                            </div>
+                            <div class="code-wrap">
+                                <pre><code class="hljs language-c++" spellcheck="false">// 木の重心を求める（戻り値は1つまたは2つの頂点）
+vector&lt;ll&gt; get_tree_centroid(ll n, const vector&lt;vector&lt;ll&gt;&gt; &graph) {
+  vector&lt;ll&gt; centroid;
+  vector&lt;ll&gt; subtree_size(n, 0);
+
+  // 再帰ラムダを用いたDFS
+  auto dfs = [&](auto self, ll v, ll p) -&gt; void {
+    subtree_size[v] = 1;
+    bool is_centroid = true;
+
+    for (ll next_v : graph[v]) {
+      if (next_v == p) continue;
+      
+      self(self, next_v, v);
+      subtree_size[v] += subtree_size[next_v];
+      
+      // 子側の部分木サイズが全体の半分より大きい場合、重心ではない
+      if (subtree_size[next_v] &gt; n / 2) {
+        is_centroid = false;
+      }
+    }
+
+    // 親側の部分木サイズが全体の半分より大きい場合、重心ではない
+    if (n - subtree_size[v] &gt; n / 2) {
+      is_centroid = false;
+    }
+
+    if (is_centroid) {
+      centroid.push_back(v);
+    }
+  };
+
+  dfs(dfs, 0, -1);
+  return centroid;
+}</code></pre>
+                            </div>
+                        </div>
+
+                        <div
+                            class="template-collection"
+                            style="margin-top: 15px"
+                        >
+                            <h4
+                                style="
+                                    margin-bottom: 5px;
+                                    font-size: 0.95em;
+                                    color: #555;
+                                "
+                            >
+                                ▼ 使い方と応用パターン
+                            </h4>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    基本の使い方（木の重心の取得）
+                                </summary>
+                                <pre><code class="hljs language-c++">ll n = 6;
+vector&lt;vector&lt;ll&gt;&gt; graph(n);
+// 辺の追加 (スターグラフのような構成)
+graph[0].push_back(1); graph[1].push_back(0);
+graph[0].push_back(2); graph[2].push_back(0);
+graph[0].push_back(3); graph[3].push_back(0);
+graph[0].push_back(4); graph[4].push_back(0);
+graph[0].push_back(5); graph[5].push_back(0);
+
+vector&lt;ll&gt; centroids = get_tree_centroid(n, graph);
+
+cout &lt;&lt; "木の重心: ";
+for (ll c : centroids) {
+  cout &lt;&lt; c &lt;&lt; " ";
+}
+cout &lt;&lt; endl;
+// この場合、頂点0を消せばすべてサイズ1の成分になるため、0が重心になります。</code></pre>
+                            </details>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    応用例：距離の総和の最小化
+                                </summary>
+                                <pre><code class="hljs language-c++">// 指定した頂点からの距離の総和をBFSで計算する
+// 計算量：O(V)
+ll get_dist_sum(ll start, ll n, const vector&lt;vector&lt;ll&gt;&gt; &graph) {
+  ll total_dist = 0;
+  queue&lt;pair&lt;ll, ll&gt;&gt; que; // {現在の頂点, 距離}
+  vector&lt;ll&gt; visited(n, 0);
+  
+  que.push({start, 0});
+  visited[start] = 1;
+  
+  while (!que.empty()) {
+    auto [v, d] = que.front();
+    que.pop();
+    
+    total_dist += d;
+    
+    for (ll next_v : graph[v]) {
+      if (!visited[next_v]) {
+        visited[next_v] = 1;
+        que.push({next_v, d + 1});
+      }
+    }
+  }
+  return total_dist;
+}
+
+// 全頂点間の距離の総和が最小となる値を求める
+// （重心は距離の総和を最小化する頂点である性質を利用）
+// 計算量：重心取得 O(V) + BFS O(V) = O(V)
+ll get_min_total_dist(ll n, const vector&lt;vector&lt;ll&gt;&gt; &graph) {
+  vector&lt;ll&gt; centroids = get_tree_centroid(n, graph);
+  
+  // 重心が1つでも2つでも、重心からの距離の総和が最小となる
+  return get_dist_sum(centroids[0], n, graph);
+}</code></pre>
+                            </details>
+                        </div>
                     </div>
 
                     <div class="function-note" id="graph-topological-sort">
