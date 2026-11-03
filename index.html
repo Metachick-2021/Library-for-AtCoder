@@ -495,8 +495,11 @@ cin &gt;&gt; d;</code></pre>
                             </li>
                             <li><a href="#stringstream">stringstream</a></li>
                             <li><a href="#hamming-distance">Hamming Distance</a></li>
-                            <li><a href="#levenshtein-distance">Levenshtein Distance</a></li>
+                            <li><a href="#string-search-k-mismatches">K-Hamming search</a></li>
                             
+                            <li><a href="#levenshtein-distance">Levenshtein Distance</a></li>
+                            <li><a href="#dp-lcs">最長共通部分列（愚直）</a></li>
+                            <li><a href="#dp-optimized-lcs">最長共通部分列（高速）</a></li>
                             <li><a href="#z-algorithm">Z-Algorithm</a></li>
                             <li><a href="#manacher">Manacher（回分判定）</a></li>
                             <li>
@@ -769,6 +772,185 @@ long long bit_dist = hamming_distance_bit(A, B);
     </div>
 </div>
 
+<div class="function-note" id="string-search-k-mismatches">
+    <div class="function-header">
+        <h3 class="function-name">K-Hamming search (K回以下の不一致を許容する文字列検索)</h3>
+        <p class="function-purpose">
+            <span class="label">用途:</span>
+            曖昧検索、DNA・塩基配列のパターンマッチング、ノイズを含むテキストからのキーワード検出
+        </p>
+    </div>
+    <p>
+        <strong>計算量:</strong> 1箇所の照合判定: O(K log N)、全体: O(N K log N)。 （N は文字列 S の長さ）<br>
+        長さ N の文字列 S から長さ M の文字列 T を探す際、最大 K 文字までの不一致（ハミング距離 K 以下）を許容してマッチする箇所を全て探す。ローリングハッシュと二分探索を組み合わせて「一致している連続区間（LCP）」を O(log N) でスキップし、不一致箇所でのみ K を消費することで、O(NM) の愚直な照合を劇的に高速化する。ACL不要。
+    </p>
+    <div
+        class="code-block"
+        data-custom-lines="true"
+        aria-label="Code block"
+    >
+        <div class="code-toolbar">
+            <span class="lang-label" aria-hidden="true"
+                >C++</span
+            >
+            <button
+                class="copy-btn"
+                type="button"
+                aria-label="Copy code"
+            >
+                Copy
+            </button>
+        </div>
+        <div class="code-wrap">
+            <pre><code class="hljs language-c++" spellcheck="false">// ローリングハッシュ構造体 (衝突対策として 2^61-1 のモジュロを使用)
+struct RollingHash {
+    using ull = unsigned long long;
+    const ull mod = (1ULL << 61) - 1;
+    const ull base = 2023; // 任意の基数
+    vector<ull> hash, power;
+    
+    ull calc_mod(ull x) const {
+        ull res = (x >> 61) + (x & mod);
+        if (res >= mod) res -= mod;
+        return res;
+    }
+    
+    ull mul(ull a, ull b) const {
+        ull au = a >> 31, ad = a & ((1ULL << 31) - 1);
+        ull bu = b >> 31, bd = b & ((1ULL << 31) - 1);
+        ull mid = ad * bu + au * bd;
+        ull midu = mid >> 30, midd = mid & ((1ULL << 30) - 1);
+        return calc_mod(au * bu * 2 + midu + (midd << 31) + ad * bd);
+    }
+    
+    RollingHash(const string& s) {
+        int n = s.size();
+        hash.assign(n + 1, 0);
+        power.assign(n + 1, 1);
+        for (int i = 0; i < n; i++) {
+            hash[i + 1] = calc_mod(mul(hash[i], base) + s[i]);
+            power[i + 1] = mul(power[i], base);
+        }
+    }
+    
+    // [l, r) のハッシュ値を取得
+    ull get(int l, int r) const {
+        ull res = hash[r] + mod - mul(hash[l], power[r - l]);
+        return calc_mod(res);
+    }
+    
+    // 二分探索による LCP (Longest Common Prefix) の計算: O(log N)
+    int get_lcp(const RollingHash& b, int l1, int r1, int l2, int r2) const {
+        int len = min(r1 - l1, r2 - l2);
+        int low = 0, high = len + 1;
+        while (high - low > 1) {
+            int mid = (low + high) / 2;
+            if (get(l1, l1 + mid) == b.get(l2, l2 + mid)) low = mid;
+            else high = mid;
+        }
+        return low;
+    }
+};
+
+// 最大 K 回の不一致を許容して S から T を検索し、マッチする開始インデックスのリストを返す
+vector<int> search_with_k_mismatches(const string& S, const string& T, int K) {
+    vector<int> res;
+    int n = S.size(), m = T.size();
+    if (n < m) return res;
+    
+    RollingHash rhS(S), rhT(T);
+    
+    for (int i = 0; i <= n - m; i++) {
+        int mismatches = 0;
+        int s_pos = i, t_pos = 0;
+        
+        while (t_pos < m && mismatches <= K) {
+            // 一致している区間を O(log N) で一気にスキップ
+            int lcp = rhS.get_lcp(rhT, s_pos, n, t_pos, m);
+            s_pos += lcp;
+            t_pos += lcp;
+            
+            // 不一致箇所を見つけた場合
+            if (t_pos < m) {
+                mismatches++;
+                s_pos++;
+                t_pos++;
+            }
+        }
+        
+        // 不一致が K 回以内なら条件を満たす
+        if (mismatches <= K) {
+            res.push_back(i);
+        }
+    }
+    return res;
+}</code></pre>
+        </div>
+    </div>
+    <p
+        class="automaton-variables-note"
+        style="line-height: 1.6; color: #333"
+    >
+        <strong>【主要な関数・引数】</strong><br />
+        ・<code
+            style="
+                background: #f4f4f4;
+                padding: 2px 4px;
+                border-radius: 4px;
+            "
+            >search_with_k_mismatches(S, T, K)</code
+        >
+        : 文字列 <code style="background: #f4f4f4; padding: 2px 4px; border-radius: 4px;">S</code> から文字列 <code style="background: #f4f4f4; padding: 2px 4px; border-radius: 4px;">T</code> との不一致が <code style="background: #f4f4f4; padding: 2px 4px; border-radius: 4px;">K</code> 箇所以内である部分文字列を探し、マッチした開始位置（0-indexed）のリストを返す。<br />
+        ・<code
+            style="
+                background: #f4f4f4;
+                padding: 2px 4px;
+                border-radius: 4px;
+            "
+            >get_lcp(b, l1, r1, l2, r2)</code
+        >
+        : 自身とハッシュ <code style="background: #f4f4f4; padding: 2px 4px; border-radius: 4px;">b</code> の指定区間の先頭から一致している文字数（LCP）を二分探索を用いて O(log N) で求める。
+    </p>
+
+    <div
+        class="template-collection"
+        style="margin-top: 15px"
+    >
+        <h4
+            style="
+                margin-bottom: 5px;
+                font-size: 0.95em;
+                color: #555;
+            "
+        >
+            ▼ 応用テンプレート（コピペ＆即使用用）
+        </h4>
+
+        <details class="snippet-details">
+            <summary>DNA配列などでの1文字不一致（K=1）を許容する検索</summary>
+            <pre><code class="hljs language-c++">string S = "AGCTTAGCTAGCT";
+string T = "AGCC";
+int K = 1;
+
+vector<int> match_positions = search_with_k_mismatches(S, T, K);
+// match_positions -> {0, 5, 9}
+// S[0..3]="AGCT" (T="AGCC"と1文字不一致)
+// S[5..8]="AGCT" (1文字不一致)
+// S[9..12]="AGCT" (1文字不一致)</code></pre>
+        </details>
+
+        <details class="snippet-details">
+            <summary>完全一致検索としての利用（K=0）</summary>
+            <pre><code class="hljs language-c++">string text = "abracadabra";
+string pattern = "abra";
+
+// K=0 を指定すれば通常のローリングハッシュを用いた文字列検索（O(N)）として動作する
+vector<int> exact_matches = search_with_k_mismatches(text, pattern, 0);
+// exact_matches -> {0, 7}</code></pre>
+        </details>
+    </div>
+</div>
+
 <div class="function-note" id="levenshtein-distance">
     <div class="function-header">
         <h3 class="function-name">Levenshtein Distance (レーベンシュタイン距離 / 編集距離)</h3>
@@ -925,6 +1107,279 @@ vector&lt;int&gt; B = {1, 3, 4, 9, 5};
 
 long long dist = levenshtein_distance(A, B);
 // dist -&gt; 2 (2を削除、9を挿入)</code></pre>
+        </details>
+    </div>
+</div>
+
+<div class="function-note" id="dp-lcs">
+    <div class="function-header">
+        <h3 class="function-name">最長共通部分列 (LCS - 愚直解/基本形)</h3>
+        <p class="function-purpose">
+            <span class="label">用途:</span>
+            2つの文字列（または配列）に共通して含まれる部分列のうち、最も長いものの「長さ」や「部分列そのもの」を求める
+        </p>
+    </div>
+    <p>
+        <strong>計算量:</strong> O(|S||T|) <br />
+        <strong>設計:</strong>
+        2次元の動的計画法 (DP) を用います。<code>dp[i][j]</code> を「文字列 S の i 文字目までと、文字列 T の j 文字目までを見たときの LCS の長さ」と定義します。末尾の文字が一致すれば <code>dp[i-1][j-1] + 1</code>、一致しなければ <code>max(dp[i-1][j], dp[i][j-1])</code> としてテーブルを埋めていきます。
+    </p>
+    <div
+        class="code-block"
+        data-custom-lines="true"
+        aria-label="Code block"
+    >
+        <div class="code-toolbar">
+            <span class="lang-label" aria-hidden="true">C++</span>
+            <button
+                class="copy-btn"
+                type="button"
+                aria-label="Copy code"
+            >
+                Copy
+            </button>
+        </div>
+        <div class="code-wrap">
+            <pre><code class="hljs language-c++" spellcheck="false">// 2つの文字列 S, T の LCS の長さを O(|S||T|) で求める
+ll lcs_length(const string&amp; S, const string&amp; T) {
+    ll n = S.size();
+    ll m = T.size();
+    
+    // dp[i][j] := Sをi文字、Tをj文字目まで見たときのLCSの長さ
+    vector&lt;vector&lt;ll&gt;&gt; dp(n + 1, vector&lt;ll&gt;(m + 1, 0));
+
+    for (ll i = 0; i &lt; n; i++) {
+        for (ll j = 0; j &lt; m; j++) {
+            if (S[i] == T[j]) {
+                // 文字が一致していれば、両方から1文字ずつ進める
+                dp[i + 1][j + 1] = dp[i][j] + 1;
+            } else {
+                // 一致していなければ、どちらかを1文字進めた状態の最大値を取る
+                dp[i + 1][j + 1] = max(dp[i][j + 1], dp[i + 1][j]);
+            }
+        }
+    }
+    
+    return dp[n][m];
+}</code></pre>
+        </div>
+    </div>
+    <p>
+        <strong>注意:</strong>
+        空間計算量も O(|S||T|) となります。文字数（|S|, |T|）がそれぞれ 3000〜5000 程度までなら通常は問題なく動作しますが、10<sup>5</sup> オーダーになるとメモリ（および実行時間）の制限に引っかかるため、配列の使い回し（空間計算量 O(|T|) への削減）や、先に挙げた高速化手法を検討する必要があります。
+    </p>
+
+    <div
+        class="template-collection"
+        style="margin-top: 15px"
+    >
+        <h4
+            style="
+                margin-bottom: 5px;
+                font-size: 0.95em;
+                color: #555;
+            "
+        >
+            ▼ 使い方と応用パターン
+        </h4>
+
+        <details class="snippet-details">
+            <summary>
+                応用：LCS の長さだけでなく、文字列そのものを復元する
+            </summary>
+            <pre><code class="hljs language-c++">string restore_lcs(const string&amp; S, const string&amp; T) {
+    ll n = S.size();
+    ll m = T.size();
+    vector&lt;vector&lt;ll&gt;&gt; dp(n + 1, vector&lt;ll&gt;(m + 1, 0));
+
+    for (ll i = 0; i &lt; n; i++) {
+        for (ll j = 0; j &lt; m; j++) {
+            if (S[i] == T[j]) dp[i + 1][j + 1] = dp[i][j] + 1;
+            else dp[i + 1][j + 1] = max(dp[i][j + 1], dp[i + 1][j]);
+        }
+    }
+
+    // DPテーブルを後ろから辿って文字列を復元する
+    string res = "";
+    ll i = n, j = m;
+    while (i &gt; 0 &amp;&amp; j &gt; 0) {
+        if (dp[i][j] == dp[i - 1][j]) {
+            i--; // S側の文字を減らす
+        } else if (dp[i][j] == dp[i][j - 1]) {
+            j--; // T側の文字を減らす
+        } else {
+            // 左上から来た場合（文字が一致している）
+            res += S[i - 1];
+            i--;
+            j--;
+        }
+    }
+    // 後ろから辿ったので反転させる
+    reverse(res.begin(), res.end());
+    return res;
+}
+
+// 使い方
+// string S = "axyb";
+// string T = "aby";
+// cout &lt;&lt; restore_lcs(S, T) &lt;&lt; endl; // "ay" または "ab" (この場合 "ay")</code></pre>
+        </details>
+    </div>
+</div>                    
+
+<div class="function-note" id="dp-optimized-lcs">
+    <div class="function-header">
+        <h3 class="function-name">高速化された LCS (片方の要素が重複しない場合)</h3>
+        <p class="function-purpose">
+            <span class="label">用途:</span>
+            文字列 S の各文字（または配列の要素）がすべて異なるとき、S と T の最長共通部分列 (LCS) の長さを高速に求め、さらにその文字列自体を復元する
+        </p>
+    </div>
+    <p>
+        <strong>計算量:</strong> O(|S| + |T| log |T|) <br />
+        <strong>設計:</strong>
+        S の文字に重複がないことを利用し、S の各文字を「S の中でのインデックス」に置き換えます。その後、T の各文字を S の対応するインデックスに変換した数列を作ると、この数列における<strong>最長増加部分列 (LIS) の長さが、元の S と T の LCS の長さと一致</strong>します。LIS は二分探索（<code>std::lower_bound</code>）を用いて O(|T| log |T|) で計算できます。
+    </p>
+    <div
+        class="code-block"
+        data-custom-lines="true"
+        aria-label="Code block"
+    >
+        <div class="code-toolbar">
+            <span class="lang-label" aria-hidden="true">C++</span>
+            <button
+                class="copy-btn"
+                type="button"
+                aria-label="Copy code"
+            >
+                Copy
+            </button>
+        </div>
+        <div class="code-wrap">
+            <pre><code class="hljs language-c++" spellcheck="false">// S の各文字が互いに異なる場合の LCS を O(|S| + |T|log|T|) で求める
+ll optimized_lcs(const string&amp; S, const string&amp; T) {
+    // 1. S の各文字の出現位置を記録（S の文字は重複しない前提）
+    // ※文字の種類が ASCII (256種類) に収まる場合の配列。
+    // ※数値配列や種類が多い場合は map&lt;ll, ll&gt; などを利用してください。
+    vector&lt;ll&gt; pos(256, -1); 
+    for (ll i = 0; i &lt; (ll)S.size(); i++) {
+        pos[S[i]] = i;
+    }
+
+    // 2. T の各文字を S でのインデックスに変換し、配列 A を作成
+    vector&lt;ll&gt; A;
+    for (char c : T) {
+        if (pos[c] != -1) {
+            A.push_back(pos[c]);
+        }
+    }
+
+    // 3. 配列 A の LIS (最長増加部分列) の長さを求める
+    const ll INF = 1e18;
+    vector&lt;ll&gt; dp(A.size() + 1, INF);
+    
+    for (ll x : A) {
+        // x 以上の値が最初に現れる位置を二分探索で見つけて更新
+        auto it = lower_bound(dp.begin(), dp.end(), x);
+        *it = x;
+    }
+    
+    // INF でない要素の数が LIS (＝LCS) の長さ
+    ll lcs_len = lower_bound(dp.begin(), dp.end(), INF) - dp.begin();
+    return lcs_len;
+}</code></pre>
+        </div>
+    </div>
+    <p>
+        <strong>注意:</strong>
+        このアルゴリズムは <strong>S に同じ要素が2つ以上存在しない</strong> という強い制約がある場合にのみ有効です。数列（<code>vector&lt;ll&gt;</code>）に対して適用する場合は、<code>pos</code> の管理を <code>map&lt;ll, ll&gt;</code> や座標圧縮を用いた配列に変更してください。
+    </p>
+
+    <div
+        class="template-collection"
+        style="margin-top: 15px"
+    >
+        <h4
+            style="
+                margin-bottom: 5px;
+                font-size: 0.95em;
+                color: #555;
+            "
+        >
+            ▼ 使い方と応用パターン
+        </h4>
+
+        <details class="snippet-details">
+            <summary>
+                基本の使い方
+            </summary>
+            <pre><code class="hljs language-c++">void solve() {
+    // S は文字に重複がない ("abcde")
+    string S = "abcde";
+    // T は文字に重複があってもよい
+    string T = "acebd";
+
+    ll ans = optimized_lcs(S, T);
+    
+    // T の 'a', 'c', 'e' もしくは 'a', 'b', 'd' などを拾う
+    // 最長は "ace" や "abd" なので長さは 3
+    cout &lt;&lt; "LCSの長さ: " &lt;&lt; ans &lt;&lt; endl; // 3
+}</code></pre>
+        </details>
+
+        <details class="snippet-details">
+            <summary>
+                応用：インデックスを追跡して LCS の文字列そのものを復元する
+            </summary>
+            <pre><code class="hljs language-c++">// 長さだけでなく、復元された文字列を返すバージョン
+string restore_optimized_lcs(const string&amp; S, const string&amp; T) {
+    vector&lt;ll&gt; pos(256, -1);
+    for (ll i = 0; i &lt; (ll)S.size(); i++) pos[S[i]] = i;
+
+    vector&lt;ll&gt; A;
+    for (char c : T) {
+        if (pos[c] != -1) A.push_back(pos[c]);
+    }
+
+    if (A.empty()) return "";
+
+    const ll INF = 1e18;
+    vector&lt;ll&gt; dp(A.size(), INF);
+    // 復元用の配列
+    vector&lt;ll&gt; id(A.size(), -1);  // dp[i] に入っている要素の、配列 A におけるインデックス
+    vector&lt;ll&gt; pre(A.size(), -1); // A[i] が LIS に追加されたときの、直前の要素の A におけるインデックス
+    
+    ll lcs_len = 0;
+    ll last_idx = -1; // LIS の末尾となる要素の A におけるインデックス
+
+    for (ll i = 0; i &lt; (ll)A.size(); i++) {
+        ll p = lower_bound(dp.begin(), dp.end(), A[i]) - dp.begin();
+        dp[p] = A[i];
+        id[p] = i;
+        if (p &gt; 0) pre[i] = id[p - 1]; // LIS における一つ前の要素のインデックスを記録
+        
+        if (p + 1 &gt; lcs_len) {
+            lcs_len = p + 1;
+            last_idx = i;
+        }
+    }
+
+    // 記録したインデックスを後ろから辿って文字列を復元
+    string res = "";
+    ll curr = last_idx;
+    while (curr != -1) {
+        res += S[A[curr]]; // A[curr] は S におけるインデックス
+        curr = pre[curr];
+    }
+    reverse(res.begin(), res.end());
+    
+    return res;
+}
+
+// 使い方
+// string S = "abcde";
+// string T = "acebd";
+// cout &lt;&lt; restore_optimized_lcs(S, T) &lt;&lt; endl; // "ace" または "abd" (この実装では "abd" が出力される)</code></pre>
         </details>
     </div>
 </div>
@@ -8598,7 +9053,9 @@ while (cnt--) {
 
                         <p>
                             <strong>注意:</strong>
-                            Gosper's Hackアルゴリズムを使用。メモリ割当なし・純粋なビット演算のため非常に高速。$K = 0$ や $K > N$ などのコーナーケースを安全にガードしている。<code>1LL &lt;&lt; N</code> がオーバーフローしないよう $N &lt; 62$ で使用すること。
+                            Gosper's Hackアルゴリズムを使用。メモリ割当なし・純粋なビット演算のため非常に高速。
+                            $K = 0$ や $K > N$ などのコーナーケースを安全にガードしている。
+                            <code>1LL &lt;&lt; N</code> がオーバーフローしないよう $N &lt; 62$ で使用すること。
                         </p>
 
                         <div
@@ -8856,6 +9313,7 @@ while (cnt--) {
     <p>
         <strong>注意:</strong>
         探索空間の大きさに注意。全列挙は <code>N<sup>K</sup></code> 通り、単調増加列挙は組み合わせの数（重複組み合わせまたは通常組み合わせ）になるため、総数が <code>10<sup>6</sup> 〜 10<sup>7</sup></code> 程度におさまる範囲で使用すること。
+        $K,N-K$ が小さい方について全探索するなど工夫が必要な場合もある。
     </p>
 
     <div
@@ -13455,6 +13913,16 @@ cout &lt;&lt; "x = 50 の最小値: " &lt;&lt; lct_static.query(50) &lt;&lt; end
                                 >
                             </li>
                             <li>
+                                <a href="#graph-centroid-decomposition"
+                                    >Centroid Decomposition (重心分解)</a
+                                >
+                            </li>
+                            <li>
+                                <a href="#complement-graph"
+                                    >Complement Graph (補グラフ上のBFS / 連結成分分解)
+                                </a>
+                            </li>
+                            <li>
                                 <a href="#graph-topological-sort"
                                     >Topological Sort</a
                                 >
@@ -13475,6 +13943,10 @@ cout &lt;&lt; "x = 50 の最小値: " &lt;&lt; lct_static.query(50) &lt;&lt; end
                                 >
                             </li>
                             <li><a href="#graph-euler-tour">Euler Tour</a></li>
+                            
+                            <li><a href="#xor-mst">XOR MST (完全グラフのXOR最小全域木)</a></li>
+                            
+                            <li><a href="#triangle-count">Triangle Count (K3数え上げ)</a></li>
                             <li><a href="#max-flow-min-cut">Max Flow / Min cut</a></li>
                             <li>
                                 <a href="#graph-bipartite-matching"
@@ -14736,6 +15208,7 @@ cout &lt;&lt; endl;
                                     応用例：木の同型判定 (Tree Isomorphism)
                                 </summary>
                                 <pre><code class="hljs language-c++">// 部分木を括弧の文字列として表現しハッシュ化する
+// 実は、このような木と括弧列の対応は全単射
 // 計算量：O(V log V) ※文字列結合・ソートのオーバーヘッドを含む
 string get_tree_hash(ll v, ll p, const vector&lt;vector&lt;ll&gt;&gt; &graph) {
   vector&lt;string&gt; child_hashes;
@@ -14790,7 +15263,7 @@ bool is_isomorphic(ll n, const vector&lt;vector&lt;ll&gt;&gt; &graph1, const vec
                         </div>
                         <p>
                             <strong>計算量:</strong> O(V)。
-                            任意の頂点を根としてDFSを行い、各部分木のサイズを計算しながら条件を満たす頂点を探します。重心分解（Centroid Decomposition）などの前処理としても使われ、重心は必ず1つまたは2つ存在します。
+                            任意の頂点を根としてDFSを行い、各部分木のサイズを計算しながら条件を満たす頂点を探します。重心は必ず1つまたは2つ存在します。
                         </p>
 
                         <div
@@ -14929,7 +15402,606 @@ ll get_min_total_dist(ll n, const vector&lt;vector&lt;ll&gt;&gt; &graph) {
                         </div>
                     </div>
 
-                    <div class="function-note" id="graph-topological-sort">
+<div class="function-note" id="graph-centroid-decomposition">
+                        <div class="function-header">
+                            <h3 class="function-name">Centroid Decomposition (重心分解)</h3>
+                            <p class="function-purpose">
+                                <span class="label">用途:</span>
+                                木を重心で再帰的に分割し、深さ O(log N) の重心分解木（Centroid Tree）を構築する。木上のパスの集計や、動的な距離クエリの高速化（分割統治法）
+                            </p>
+                        </div>
+                        <p>
+                            <strong>計算量:</strong> 構築 O(N log N)。<br>
+                            現在の木から重心を見つけて削除し、分裂した部分木に対して再帰的に処理を行います。どんなに偏った木でも、生成される重心分解木の深さは必ず log N 以下になります。<br>
+                            構造体単体で重心の探索から重心分解木の構築（根、親、子リストの保持）まで完結しています。
+                        </p>
+
+                        <div
+                            class="code-block"
+                            data-custom-lines="true"
+                            aria-label="Code block"
+                        >
+                            <div class="code-toolbar">
+                                <span class="lang-label" aria-hidden="true"
+                                    >C++</span
+                                >
+                                <button
+                                    class="copy-btn"
+                                    type="button"
+                                    aria-label="Copy code"
+                                >
+                                    Copy
+                                </button>
+                            </div>
+                            <div class="code-wrap">
+                                <pre><code class="hljs language-c++" spellcheck="false">// 前提：木の重心
+// （※この構造体内部で重心を求める処理を完結して実装しています）
+struct CentroidDecomposition {
+    ll n;
+    vector&lt;vector&lt;ll&gt;&gt; graph;
+    vector&lt;bool&gt; removed;
+    vector&lt;ll&gt; subtree_size;
+    
+    // 取得できる情報群
+    vector&lt;ll&gt; centroid_parent;       // 重心分解木における親（根の場合は -1）
+    vector&lt;vector&lt;ll&gt;&gt; centroid_tree; // 重心分解木における子リスト（有向辺）
+    ll centroid_root;                 // 重心分解木の根（一番最初の重心）
+
+    // 構築 O(N log N)
+    CentroidDecomposition(ll n, const vector&lt;vector&lt;ll&gt;&gt;&amp; g) : n(n), graph(g) {
+        removed.assign(n, false);
+        subtree_size.assign(n, 0);
+        centroid_parent.assign(n, -1);
+        centroid_tree.assign(n, vector&lt;ll&gt;());
+        centroid_root = -1;
+        build(0, -1);
+    }
+
+    // DFSで現在の有効な部分木のサイズを計算
+    void calc_size(ll v, ll p) {
+        subtree_size[v] = 1;
+        for (ll next_v : graph[v]) {
+            if (next_v == p || removed[next_v]) continue;
+            calc_size(next_v, v);
+            subtree_size[v] += subtree_size[next_v];
+        }
+    }
+
+    // 現在の部分木の重心を見つける
+    ll get_centroid(ll v, ll p, ll total_size) {
+        for (ll next_v : graph[v]) {
+            if (next_v == p || removed[next_v]) continue;
+            // 子のサイズが全体の半分より大きければ、そっちに重心がある
+            if (subtree_size[next_v] &gt; total_size / 2) {
+                return get_centroid(next_v, v, total_size);
+            }
+        }
+        return v;
+    }
+
+    // 重心分解木を再帰的に構築
+    void build(ll v, ll p_centroid) {
+        calc_size(v, -1);
+        ll c = get_centroid(v, -1, subtree_size[v]);
+        
+        centroid_parent[c] = p_centroid;
+        if (p_centroid == -1) {
+            centroid_root = c; // 親がいないならそこが大元の根
+        } else {
+            centroid_tree[p_centroid].push_back(c); // 親の子リストに自分を追加
+        }
+        
+        removed[c] = true;
+
+        for (ll next_v : graph[c]) {
+            if (!removed[next_v]) {
+                build(next_v, c);
+            }
+        }
+    }
+};</code></pre>
+                            </div>
+                        </div>
+
+                        <div
+                            class="template-collection"
+                            style="margin-top: 15px"
+                        >
+                            <h4
+                                style="
+                                    margin-bottom: 5px;
+                                    font-size: 0.95em;
+                                    color: #555;
+                                "
+                            >
+                                ▼ 使い方と応用パターン
+                            </h4>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    基本の使い方（重心分解木の根・親・子の取得と走査）
+                                </summary>
+                                <pre><code class="hljs language-c++">ll n = 7;
+vector&lt;vector&lt;ll&gt;&gt; graph(n);
+// 0-1-3-4
+//  | |
+//  2 5-6 という直線的な木
+graph[0].push_back(1); graph[1].push_back(0);
+graph[1].push_back(2); graph[2].push_back(1);
+graph[1].push_back(3); graph[3].push_back(1);
+graph[3].push_back(4); graph[4].push_back(3);
+graph[3].push_back(5); graph[5].push_back(3);
+graph[5].push_back(6); graph[6].push_back(5);
+
+// 構築
+CentroidDecomposition cd(n, graph);
+
+// 1. 重心分解木の根（一番最初に選ばれた全体の重心）を取得
+cout &lt;&lt; "[1] 重心分解木の根: " &lt;&lt; cd.centroid_root &lt;&lt; "\n\n";
+
+// 2. 各頂点の情報をすべて取得
+cout &lt;&lt; "[2] 各頂点の重心分解木上での情報\n";
+for (ll i = 0; i &lt; n; ++i) {
+    cout &lt;&lt; "頂点 " &lt;&lt; i &lt;&lt; " : ";
+    cout &lt;&lt; "親 = " &lt;&lt; cd.centroid_parent[i] &lt;&lt; ", ";
+    
+    cout &lt;&lt; "子 = { ";
+    for (ll child : cd.centroid_tree[i]) {
+        cout &lt;&lt; child &lt;&lt; " ";
+    }
+    cout &lt;&lt; "}\n";
+}
+cout &lt;&lt; "\n";
+
+// 3. 応用：ある頂点（例: 頂点6）から、重心分解木を根に向かって登る
+// （点更新などのクエリで頻繁に使う操作です）
+ll current = 6;
+cout &lt;&lt; "[3] 頂点 " &lt;&lt; current &lt;&lt; " から根までのパス: ";
+while (current != -1) {
+    cout &lt;&lt; current &lt;&lt; " -&gt; ";
+    current = cd.centroid_parent[current];
+}
+cout &lt;&lt; "END\n";</code></pre>
+                            </details>
+
+<details class="snippet-details">
+                                <summary>
+                                    応用例：木上の分割統治法（構造体を利用して外付けでパス集計を解く）
+                                </summary>
+                                <p style="margin: 10px 0; font-size: 0.9em; line-height: 1.6;">
+                                    事前に構築した <code>CentroidDecomposition</code> 構造体の情報（根と子リスト）を利用して、木上の分割統治を行う典型的なパターンです。<br>
+                                    <strong>※「部分木」という言葉の区別に注意してください：</strong><br>
+                                    ① <strong>元の木上の部分木（連結成分）</strong>：現在の重心 <code>c</code> を取り除いたことによって分断された、元のグラフ上の各エリア。<br>
+                                    ② <strong>重心分解木上の子</strong>：上記①で分断された各エリアの中から、次に重心として選ばれた頂点。<br>
+                                    ここでは例として<strong>「距離が K となる頂点対の数を数える」</strong>具体的な集計処理を実装しています。
+                                </p>
+                                <pre><code class="hljs language-c++">// 前提: 事前に構築済みであること
+// CentroidDecomposition cd(n, graph);
+
+ll K = 3; // 例: 距離が 3 となるペアを数える
+ll ans = 0;
+
+// 分割統治の過程で「すでに重心として処理され、元の木から取り除かれた頂点」を記録する
+vector&lt;bool&gt; used(n, false);
+
+// 重心分解木を上から下へ辿る再帰関数
+// c: 現在処理対象としている重心
+auto solve = [&amp;](auto&amp; self, ll c) -&gt; void {
+    // 重心 c を処理済みにする（これにより、元の木が c を境に論理的に分断される）
+    used[c] = true; 
+
+    // =========================================================
+    // [1] 重心 c を経由する（c をまたぐ）パスの集計処理
+    // =========================================================
+    
+    // これまで見た「元の木上の部分木」の頂点までの距離を記録する
+    // キー: 距離, バリュー: その距離になる頂点の数
+    map&lt;ll, ll&gt; dist_count;
+    dist_count[0] = 1; // c 自身との距離は 0 (1個)
+    
+    // c から元のグラフ(graph)を辿り、分断された各「元の木上の部分木」ごとに処理する
+    for (ll next_v : graph[c]) {
+        if (used[next_v]) continue; // 上位の重心として既に分断された方向へは行かない
+        
+        vector&lt;ll&gt; current_subtree_dists; // 現在注目している部分木内の頂点群の距離
+        
+        // 元の木上を探索し、c からの距離を列挙する DFS
+        auto get_dist = [&amp;](auto&amp; get_dist_self, ll v, ll p, ll d) -&gt; void {
+            current_subtree_dists.push_back(d);
+            for (ll nv : graph[v]) {
+                if (nv == p || used[nv]) continue; // 逆流防止 &amp; 他の重心エリアへの侵入防止
+                get_dist_self(get_dist_self, nv, v, d + 1);
+            }
+        };
+        
+        // next_v を起点に、距離 1 から探索スタート
+        get_dist(get_dist, next_v, c, 1);
+        
+        // 集計ステップ1: 今列挙した部分木内の頂点と、過去に探索した別の部分木の頂点とを掛け合わせる
+        for (ll d : current_subtree_dists) {
+            ll target = K - d;
+            if (dist_count.count(target)) {
+                ans += dist_count[target];
+            }
+        }
+        
+        // 集計ステップ2: 今列挙した部分木の距離を dist_count に合流させる（次の部分木との計算に備える）
+        for (ll d : current_subtree_dists) {
+            dist_count[d]++;
+        }
+    }
+    
+    // =========================================================
+    // [2] 分断された各エリアの新しい重心に対して再帰
+    // =========================================================
+    
+    // 重心分解木における c の子（c を取り除いた各連結成分の重心）へ進む
+    for (ll child_centroid : cd.centroid_tree[c]) {
+        self(self, child_centroid);
+    }
+};
+
+// 処理全体は「重心分解木の根（一番最初の木全体の重心）」からスタートする
+solve(solve, cd.centroid_root);
+
+// ans に距離 K となるペアの総数が入る
+cout &lt;&lt; ans &lt;&lt; endl;</code></pre>
+                            </details>
+                        </div>
+                    </div>
+
+<div class="function-note" id="complement-graph">
+                        <div class="function-header">
+                            <h3 class="function-name">
+                                Complement Graph (補グラフ上のBFS / 連結成分分解)
+                            </h3>
+                            <p class="function-purpose">
+                                <span class="label">用途:</span>
+                                辺が $\mathcal{O}(N^2)$ 存在する補グラフ（与えられた辺以外のすべてに張られたグラフ）での高速な探索・成分分解
+                            </p>
+                        </div>
+                        <p>
+                            <strong>計算量:</strong> $\mathcal{O}((N + M) \log N)$ （$N$: 頂点数, $M$: 元グラフの辺数）。<br>
+                            未訪問の頂点を <code>std::set</code> で一元管理し、元グラフの隣接リストを二分探索することで、補グラフ上で辺が存在する頂点だけを効率的に抽出・削除します。二部グラフ判定の高速な矛盾チェック（$\mathcal{O}(M)$）も内蔵しています。
+                        </p>
+                        <div
+                            class="code-block"
+                            data-custom-lines="true"
+                            aria-label="Code block"
+                        >
+                            <div class="code-toolbar">
+                                <span class="lang-label" aria-hidden="true"
+                                    >C++</span
+                                >
+                                <button
+                                    class="copy-btn"
+                                    type="button"
+                                    aria-label="Copy code"
+                                >
+                                    Copy
+                                </button>
+                            </div>
+                            <div class="code-wrap">
+                                <pre><code class="hljs language-c++" spellcheck="false">// 補グラフ（与えられた辺「以外」に辺があるグラフ）を効率的に扱うライブラリ
+// 前提: typedef long long ll; および graph は vector&lt;vector&lt;ll&gt;&gt; 型
+struct ComplementGraph {
+  ll n;
+  vector&lt;vector&lt;ll&gt;&gt; adj;
+
+  // コンストラクタ: 元グラフを渡し、内部で二分探索用にソートする
+  ComplementGraph(ll n, const vector&lt;vector&lt;ll&gt;&gt;& graph) : n(n), adj(graph) {
+    for (ll i = 0; i &lt; n; ++i) {
+      sort(adj[i].begin(), adj[i].end());
+    }
+  }
+
+  // 1. 補グラフ上での始点(複数可)からの最短距離を求める
+  vector&lt;ll&gt; get_distances(const vector&lt;ll&gt;& start_nodes) {
+    vector&lt;ll&gt; dist(n, -1);
+    set&lt;ll&gt; unvisited;
+    for (ll i = 0; i &lt; n; ++i) unvisited.insert(i);
+
+    queue&lt;ll&gt; q;
+    for (ll s : start_nodes) {
+      dist[s] = 0;
+      q.push(s);
+      unvisited.erase(s);
+    }
+
+    while (!q.empty()) {
+      ll u = q.front();
+      q.pop();
+
+      auto it = unvisited.begin();
+      while (it != unvisited.end()) {
+        ll v = *it;
+        // 元グラフに辺があれば補グラフには辺がない
+        if (binary_search(adj[u].begin(), adj[u].end(), v)) {
+          ++it;
+        } else {
+          dist[v] = dist[u] + 1;
+          q.push(v);
+          it = unvisited.erase(it); // 訪問したら即座に候補から消す
+        }
+      }
+    }
+    return dist;
+  }
+
+  // 2. 補グラフにおける連結成分分解
+  // 戻り値: 各連結成分に含まれる頂点リストのリスト
+  vector&lt;vector&lt;ll&gt;&gt; get_connected_components() {
+    vector&lt;vector&lt;ll&gt;&gt; comps;
+    set&lt;ll&gt; unvisited;
+    for (ll i = 0; i &lt; n; ++i) unvisited.insert(i);
+
+    while (!unvisited.empty()) {
+      ll start = *unvisited.begin();
+      unvisited.erase(unvisited.begin());
+
+      vector&lt;ll&gt; comp;
+      queue&lt;ll&gt; q;
+      q.push(start);
+      comp.push_back(start);
+
+      while (!q.empty()) {
+        ll u = q.front();
+        q.pop();
+
+        auto it = unvisited.begin();
+        while (it != unvisited.end()) {
+          ll v = *it;
+          if (binary_search(adj[u].begin(), adj[u].end(), v)) {
+            ++it;
+          } else {
+            comp.push_back(v);
+            q.push(v);
+            it = unvisited.erase(it);
+          }
+        }
+      }
+      comps.push_back(comp);
+    }
+    return comps;
+  }
+
+  // 3. 補グラフの二部グラフ判定（元グラフを2つのクリークに分割可能か等に使用）
+  // 戻り値: 二部グラフなら各成分の {色0の頂点群, 色1の頂点群} のリスト。不可なら空配列
+  vector&lt;pair&lt;vector&lt;ll&gt;, vector&lt;ll&gt;&gt;&gt; get_bipartite_components() {
+    vector&lt;pair&lt;vector&lt;ll&gt;, vector&lt;ll&gt;&gt;&gt; comps;
+    set&lt;ll&gt; unvisited;
+    for (ll i = 0; i &lt; n; ++i) unvisited.insert(i);
+    
+    vector&lt;ll&gt; color(n, -1);
+
+    while (!unvisited.empty()) {
+      ll start = *unvisited.begin();
+      unvisited.erase(unvisited.begin());
+
+      vector&lt;ll&gt; color0, color1;
+      queue&lt;ll&gt; q;
+      q.push(start);
+      color[start] = 0;
+      color0.push_back(start);
+
+      vector&lt;ll&gt; current_comp = {start};
+
+      while (!q.empty()) {
+        ll u = q.front();
+        q.pop();
+
+        auto it = unvisited.begin();
+        while (it != unvisited.end()) {
+          ll v = *it;
+          if (binary_search(adj[u].begin(), adj[u].end(), v)) {
+            ++it;
+          } else {
+            color[v] = 1 - color[u];
+            if (color[v] == 0) color0.push_back(v);
+            else color1.push_back(v);
+            
+            current_comp.push_back(v);
+            q.push(v);
+            it = unvisited.erase(it);
+          }
+        }
+      }
+
+      // 矛盾チェック：同色同士に「補グラフの辺」がないか（＝元グラフで全て辺が張られているか）
+      for (ll u : current_comp) {
+        ll same_color_count = 0;
+        for (ll v : adj[u]) {
+          if (color[u] == color[v]) same_color_count++;
+        }
+        // 自分以外の同色の頂点すべてと元グラフで繋がっていなければならない
+        ll expected = (color[u] == 0 ? color0.size() : color1.size()) - 1;
+        if (same_color_count &lt; expected) return {}; // 矛盾発見（二部グラフではない）
+      }
+      comps.push_back({color0, color1});
+    }
+    return comps;
+  }
+};</code></pre>
+                            </div>
+                        </div>
+
+                        <div
+                            class="template-collection"
+                            style="margin-top: 15px"
+                        >
+                            <h4
+                                style="
+                                    margin-bottom: 5px;
+                                    font-size: 0.95em;
+                                    color: #555;
+                                "
+                            >
+                                ▼ 使い方・適用例
+                            </h4>
+
+<details class="snippet-details">
+                                <summary>
+                                    基本の使い方（最短距離と連結成分分解）
+                                </summary>
+                                <pre><code class="hljs language-c++">ll n = 5;
+vector&lt;vector&lt;ll&gt;&gt; graph(n);
+// 元グラフの辺（0-1, 1-2 のみ。これら「以外」が補グラフの辺となる）
+graph[0].push_back(1); graph[1].push_back(0);
+graph[1].push_back(2); graph[2].push_back(1);
+
+// 1. ライブラリの初期化
+ComplementGraph cg(n, graph);
+
+// 2. 補グラフ上での最短距離の取得（頂点0を始点とする）
+// ※ 始点が複数ある場合は {0, 3} のように複数渡せます（多点スタートBFS）
+vector&lt;ll&gt; dist = cg.get_distances({0});
+cout &lt;&lt; "頂点0からの補グラフ上の距離:" &lt;&lt; endl;
+for(ll i = 0; i &lt; n; ++i) {
+  cout &lt;&lt; " 頂点" &lt;&lt; i &lt;&lt; ": " &lt;&lt; dist[i] &lt;&lt; endl;
+}
+
+// 3. 補グラフ上での連結成分分解
+vector&lt;vector&lt;ll&gt;&gt; comps = cg.get_connected_components();
+cout &lt;&lt; "補グラフの連結成分数: " &lt;&lt; comps.size() &lt;&lt; endl;
+for (ll i = 0; i &lt; comps.size(); ++i) {
+  cout &lt;&lt; " 成分 " &lt;&lt; i &lt;&lt; " の頂点: ";
+  for (ll v : comps[i]) cout &lt;&lt; v &lt;&lt; " ";
+  cout &lt;&lt; endl;
+}</code></pre>
+                            </details>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    応用1: 最短経路DAG上のDP（経路数カウント）
+                                </summary>
+                                <p style="padding: 10px; font-size: 0.9em; color: #444; background: #f9f9f9;">
+                                    補グラフで「距離 d-1 から 距離 d への遷移」をまともに数えると TLE します。<br>
+                                    そこで、<strong>「距離 d-1 の全頂点の dp の和」から「元グラフで辺が張られている（＝補グラフで遷移できない）頂点の dp の和」を引く</strong>という $\mathcal{O}(N+M)$ の天才的アプローチを取ります。
+                                </p>
+                                <pre><code class="hljs language-c++">ComplementGraph cg(n, graph);
+vector&lt;ll&gt; dist = cg.get_distances({0}); // 頂点0からの距離
+
+// 距離ごとに頂点をバケット分類
+ll max_d = 0;
+for(ll d : dist) max_d = max(max_d, d);
+vector&lt;vector&lt;ll&gt;&gt; nodes_by_dist(max_d + 1);
+for(ll i = 0; i &lt; n; i++) {
+  if(dist[i] != -1) nodes_by_dist[dist[i]].push_back(i);
+}
+
+vector&lt;ll&gt; dp(n, 0);
+dp[0] = 1;
+ll mod = 998244353;
+
+for (ll d = 1; d &lt;= max_d; d++) {
+  // 距離 d-1 の層の経路数の総和を求めておく
+  ll prev_sum = 0;
+  for (ll u : nodes_by_dist[d - 1]) {
+    prev_sum = (prev_sum + dp[u]) % mod;
+  }
+
+  // 距離 d の各頂点について
+  for (ll v : nodes_by_dist[d]) {
+    ll invalid_sum = 0;
+    // 「元グラフ」の辺を逆に辿り、距離が d-1 の頂点の分だけ除外する
+    for (ll u : graph[v]) {
+      if (dist[u] == d - 1) {
+        invalid_sum = (invalid_sum + dp[u]) % mod;
+      }
+    }
+    dp[v] = (prev_sum - invalid_sum + mod) % mod;
+  }
+}
+
+cout &lt;&lt; "頂点 N-1 への補グラフ上での最短経路数: " &lt;&lt; dp[n - 1] &lt;&lt; endl;</code></pre>
+                            </details>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    応用2: 連結成分サイズを用いたナップサックDP (bitset高速化)
+                                </summary>
+                                <p style="padding: 10px; font-size: 0.9em; color: #444; background: #f9f9f9;">
+                                    グラフを2つのグループに分ける際、「異なるグループ間に元グラフの辺が全て張られているか」等の条件は「補グラフの連結成分を丸ごとどちらかのグループに入れる問題」に帰着します。
+                                </p>
+                                <pre><code class="hljs language-c++">ComplementGraph cg(n, graph);
+auto comps = cg.get_connected_components();
+
+// N &lt;= 100000 の部分和問題を bitset で 1/64 に定数倍高速化
+bitset&lt;100005&gt; dp;
+dp[0] = 1;
+
+for (const auto& comp : comps) {
+  ll s = comp.size();
+  dp = dp | (dp &lt;&lt; s); // 今までの状態にサイズ s を足したものを合成
+}
+
+ll K = n / 2; // 例：合計を K にできるか
+if (dp[K]) {
+  cout &lt;&lt; "部分和 " &lt;&lt; K &lt;&lt; " は作成可能" &lt;&lt; endl;
+}</code></pre>
+                            </details>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    応用3: 2つのクリークへの分割 ($2^k-2$ 通りの彩色)
+                                </summary>
+                                <p style="padding: 10px; font-size: 0.9em; color: #444; background: #f9f9f9;">
+                                    「与えられたグラフを2つのクリーク（完全グラフ）に分割できるか？」という問題は、<strong>「補グラフが二部グラフになるか？」</strong>と同値です。<br>
+                                    可能であれば、連結成分の数を $k$ として $2^k$ 通りの分け方があります（空を許さない場合は $-2$ します）。
+                                </p>
+                                <pre><code class="hljs language-c++">ComplementGraph cg(n, graph);
+auto bipartite_comps = cg.get_bipartite_components();
+
+if (bipartite_comps.empty()) {
+  cout &lt;&lt; "補グラフは二部グラフではないため分割不可能" &lt;&lt; endl;
+} else {
+  ll k = bipartite_comps.size(); // 連結成分の数
+  
+  // 各連結成分は (色0=A, 色1=B) または (色0=B, 色1=A) の 2通りの選び方がある
+  ll ans = 1;
+  ll mod = 998244353;
+  for (ll i = 0; i &lt; k; ++i) {
+    ans = (ans * 2) % mod;
+  }
+  
+  // もし「どちらのグループも1人以上必要（空グループ不可）」という制約がある場合、
+  // 全てA、全てB になる 2 パターンを除外する
+  ans = (ans - 2 + mod) % mod;
+  
+  cout &lt;&lt; "2つのクリークに分割する方法: " &lt;&lt; ans &lt;&lt; " 通り" &lt;&lt; endl;
+}</code></pre>
+                            </details>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    応用4: 異なるグループ間にすべて辺があるような2分割 ($2^k-2$ 通り)
+                                </summary>
+                                <p style="padding: 10px; font-size: 0.9em; color: #444; background: #f9f9f9;">
+                                    「グループAとグループBの任意の頂点対間に、元グラフ上で辺が存在する」という条件は、<strong>「補グラフにおいてグループAとグループBをまたぐ辺が1本もない」</strong>ことと同値です。<br>
+                                    つまり、補グラフ上で連結している頂点（同じ連結成分に属する頂点）は必ず同じグループに入らなければなりません。補グラフの連結成分の数を $k$ とすると、各成分をどちらのグループに入れるかで $2^k$ 通りの分け方になります。
+                                </p>
+                                <pre><code class="hljs language-c++">ComplementGraph cg(n, graph);
+auto comps = cg.get_connected_components();
+ll k = comps.size(); // 補グラフの連結成分の数
+
+ll ans = 1;
+ll mod = 998244353;
+// 連結成分ごとに A または B の 2通りの割り当てがある
+for (ll i = 0; i &lt; k; ++i) {
+  ans = (ans * 2) % mod;
+}
+
+// もし「どちらのグループも1人以上必要（空グループ不可）」という制約がある場合、
+// 全てA、全てB になる 2 パターンを除外する
+ans = (ans - 2 + mod) % mod;
+
+cout &lt;&lt; "条件を満たす2グループへの分割方法: " &lt;&lt; ans &lt;&lt; " 通り" &lt;&lt; endl;</code></pre>
+                            </details>
+                        </div>
+                    </div>
+                    
+
+<div class="function-note" id="graph-topological-sort">
                         <div class="function-header">
                             <h3 class="function-name">Topological Sort</h3>
                             <p class="function-purpose">
@@ -14959,23 +16031,32 @@ ll get_min_total_dist(ll n, const vector&lt;vector&lt;ll&gt;&gt; &graph) {
                                 </button>
                             </div>
                             <div class="code-wrap">
-                                <pre><code class="hljs language-c++" spellcheck="false">vector&lt;ll&gt; indeg(n, 0);
-for (ll i = 0; i &lt; n; i++) {
-    for (ll to : G[i]) indeg[to]++;
-}
-
-queue&lt;ll&gt; q;
-for (ll i = 0; i &lt; n; i++) {
-    if (indeg[i] == 0) q.push(i);
-}
-
-vector&lt;ll&gt; ord;
-while (!q.empty()) {
-    ll v = q.front(); q.pop();
-    ord.push_back(v);
-    for (ll to : G[v]) {
-        if (--indeg[to] == 0) q.push(to);
+                                <pre><code class="hljs language-c++" spellcheck="false">// DAG のトポロジカルソートを行う
+// 戻り値: ソートされた頂点配列（閉路がある場合は空の配列を返す）
+vector&lt;ll&gt; topological_sort(const vector&lt;vector&lt;ll&gt;&gt;&amp; G) {
+    ll n = G.size();
+    vector&lt;ll&gt; indeg(n, 0);
+    for (ll i = 0; i &lt; n; i++) {
+        for (ll to : G[i]) indeg[to]++;
     }
+
+    queue&lt;ll&gt; q;
+    for (ll i = 0; i &lt; n; i++) {
+        if (indeg[i] == 0) q.push(i);
+    }
+
+    vector&lt;ll&gt; ord;
+    while (!q.empty()) {
+        ll v = q.front(); q.pop();
+        ord.push_back(v);
+        for (ll to : G[v]) {
+            if (--indeg[to] == 0) q.push(to);
+        }
+    }
+    
+    // 閉路がある場合は要素数が n にならない
+    if (ord.size() != n) return {};
+    return ord;
 }</code></pre>
                             </div>
                         </div>
@@ -14984,6 +16065,45 @@ while (!q.empty()) {
                             $v$ への有向辺（$u \to v$）」が存在する場合、ord
                             配列の中では必ず $u$ が $v$ より手前に配置される。
                         </p>
+
+                        <div
+                            class="template-collection"
+                            style="margin-top: 15px"
+                        >
+                            <h4
+                                style="
+                                    margin-bottom: 5px;
+                                    font-size: 0.95em;
+                                    color: #555;
+                                "
+                            >
+                                ▼ 使い方と応用パターン
+                            </h4>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    基本の使い方（依存関係の解決と閉路判定）
+                                </summary>
+                                <pre><code class="hljs language-c++">ll n = 4;
+vector&lt;vector&lt;ll&gt;&gt; G(n);
+// 依存関係: 0->1, 0->2, 1->3, 2->3
+G[0].push_back(1);
+G[0].push_back(2);
+G[1].push_back(3);
+G[2].push_back(3);
+
+vector&lt;ll&gt; ord = topological_sort(G);
+
+if (ord.empty()) {
+    cout &lt;&lt; "閉路が存在するため、ソートできません" &lt;&lt; endl;
+} else {
+    for (ll v : ord) {
+        cout &lt;&lt; v &lt;&lt; " ";
+    }
+    cout &lt;&lt; endl; // 例: 0 1 2 3 または 0 2 1 3
+}</code></pre>
+                            </details>
+                        </div>
                     </div>
 
                     <div class="function-note" id="graph-connected-components">
@@ -15023,16 +16143,16 @@ while (!q.empty()) {
                                 <pre><code class="hljs language-c++" spellcheck="false">// graph の連結成分を求める
 // 戻り値 V[i] が i 番目の連結成分に含まれる頂点集合
 vector&lt;vector&lt;ll&gt;&gt; connected_components(
-    const vector&lt;vector&lt;ll&gt;&gt;& graph) {
+    const vector&lt;vector&lt;ll&gt;&gt;&amp; graph) {
 
     ll n = graph.size();
 
     vector&lt;bool&gt; seen(n, false);
     vector&lt;vector&lt;ll&gt;&gt; V;
 
-    auto dfs = [&](auto&amp;&amp; self,
+    auto dfs = [&amp;](auto&amp;&amp; self,
                    ll v,
-                   vector&lt;ll&gt;& comp) -&gt; void {
+                   vector&lt;ll&gt;&amp; comp) -&gt; void {
 
         seen[v] = true;
         comp.push_back(v);
@@ -15062,7 +16182,55 @@ vector&lt;vector&lt;ll&gt;&gt; connected_components(
                             無向グラフを想定。再帰DFSを使っているため、頂点数が非常に多い場合は
                             iterative DFS や BFS に置き換えると安全。
                         </p>
+
+                        <div
+                            class="template-collection"
+                            style="margin-top: 15px"
+                        >
+                            <h4
+                                style="
+                                    margin-bottom: 5px;
+                                    font-size: 0.95em;
+                                    color: #555;
+                                "
+                            >
+                                ▼ 使い方と応用パターン
+                            </h4>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    基本の使い方（グラフの連結成分を列挙する）
+                                </summary>
+                                <pre><code class="hljs language-c++">ll n = 5;
+vector&lt;vector&lt;ll&gt;&gt; graph(n);
+
+// グループA: 0-1-2 が連結
+graph[0].push_back(1); graph[1].push_back(0);
+graph[1].push_back(2); graph[2].push_back(1);
+
+// グループB: 3-4 が連結
+graph[3].push_back(4); graph[4].push_back(3);
+
+// 連結成分分解を実行
+vector&lt;vector&lt;ll&gt;&gt; comps = connected_components(graph);
+
+cout &lt;&lt; "連結成分の数: " &lt;&lt; comps.size() &lt;&lt; endl; // 2
+
+for (int i = 0; i &lt; comps.size(); i++) {
+    cout &lt;&lt; "グループ " &lt;&lt; i &lt;&lt; ": ";
+    for (ll v : comps[i]) {
+        cout &lt;&lt; v &lt;&lt; " ";
+    }
+    cout &lt;&lt; endl;
+}
+// 実行結果例:
+// グループ 0: 0 1 2 
+// グループ 1: 3 4</code></pre>
+                            </details>
+                        </div>
                     </div>
+
+
 
 <div class="function-note" id="graph-scc">
                         <div class="function-header">
@@ -15586,6 +16754,371 @@ long long dist = et.dist[u] + et.dist[v] - 2 * et.dist[lca];</code></pre>
                             ・LCAや距離を求める際のスパーステーブルへのクエリには <code>first_visit</code> を使用します。
                         </p>
                     </div>
+
+<div class="function-note" id="xor-mst">
+    <div class="function-header">
+        <h3 class="function-name">XOR MST (完全グラフのXOR最小全域木)</h3>
+        <p class="function-purpose">
+            <span class="label">用途:</span>
+            N個の非負整数において、任意の2頂点間のコストをビットごとの排他的論理和（A[i] ^ A[j]）としたときの完全グラフの最小全域木(MST)を高速に構築する
+        </p>
+    </div>
+    <p>
+        <strong>計算量:</strong> O(N log N log(max A))<br>
+        すべての頂点対に辺を張ると O(N^2) となるが、配列をソートしてTrie木（プレフィックス木）を構築し、Borůvka法のように分割統治とTrie木の探索（常にサイズの小さい方の集合から他方へ最小XOR辺を探す）を行うことで高速化している。要素に重複がある場合もコスト0の辺として自然に処理される。
+    </p>
+    <div
+        class="code-block"
+        data-custom-lines="true"
+        aria-label="Code block"
+    >
+        <div class="code-toolbar">
+            <span class="lang-label" aria-hidden="true">C++</span>
+            <button
+                class="copy-btn"
+                type="button"
+                aria-label="Copy code"
+            >
+                Copy
+            </button>
+        </div>
+        <div class="code-wrap">
+            <pre><code class="hljs language-c++" spellcheck="false">// XOR MST 本体
+// 戻り値: {MSTの重みの総和, 使用した辺(u, v)のリスト}
+// ※ a[i] >= 0 を想定しています
+pair&lt;ll, vector&lt;pair&lt;int, int&gt;&gt;&gt; xor_mst(const vector&lt;ll&gt;&amp; a) {
+    int n = a.size();
+    if (n &lt;= 1) return {0, {}};
+    
+    // 元のインデックスを保持したままソート
+    vector&lt;pair&lt;ll, int&gt;&gt; val_idx(n);
+    for (int i = 0; i &lt; n; i++) val_idx[i] = {a[i], i};
+    sort(val_idx.begin(), val_idx.end());
+    
+    struct TrieNode {
+        int ch[2];
+        int l, r; // このノードを通過する値の val_idx におけるインデックスの範囲 [l, r]
+        TrieNode() { ch[0] = ch[1] = -1; l = r = -1; }
+    };
+    vector&lt;TrieNode&gt; trie(1);
+    
+    // 値の最大値から必要なビット数を判定
+    int max_bit = 29;
+    for (int i = 0; i &lt; n; i++) {
+        if (a[i] &gt;= (1LL &lt;&lt; 30)) max_bit = 59;
+    }
+    
+    // Trie木の構築
+    for (int i = 0; i &lt; n; i++) {
+        int u = 0;
+        if (trie[u].l == -1) trie[u].l = i;
+        trie[u].r = i;
+        for (int bit = max_bit; bit &gt;= 0; bit--) {
+            int b = (val_idx[i].first &gt;&gt; bit) &amp; 1;
+            if (trie[u].ch[b] == -1) {
+                trie[u].ch[b] = trie.size();
+                trie.emplace_back();
+                trie.back().l = i;
+            }
+            u = trie[u].ch[b];
+            trie[u].r = i;
+        }
+    }
+    
+    ll total_weight = 0;
+    vector&lt;pair&lt;int, int&gt;&gt; mst_edges;
+    
+    // 分割統治でMSTの辺を決定
+    auto dfs = [&amp;](auto&amp; self, int u, int bit) -&gt; void {
+        if (bit &lt; 0) {
+            // 完全一致する重複要素同士はコスト0で結ぶ
+            for (int i = trie[u].l; i &lt; trie[u].r; i++) {
+                mst_edges.push_back({val_idx[i].second, val_idx[i+1].second});
+            }
+            return;
+        }
+        
+        int lc = trie[u].ch[0];
+        int rc = trie[u].ch[1];
+        
+        // 子ノードの再帰処理
+        if (lc != -1) self(self, lc, bit - 1);
+        if (rc != -1) self(self, rc, bit - 1);
+        
+        // 両方の子ノードが存在する場合、2つのグループを繋ぐ最小の辺を探す
+        if (lc != -1 &amp;&amp; rc != -1) {
+            ll min_w = 4e18; // 十分大きな値
+            pair&lt;int, int&gt; best_edge = {-1, -1};
+            
+            int len_l = trie[lc].r - trie[lc].l + 1;
+            int len_r = trie[rc].r - trie[rc].l + 1;
+            
+            // Trie木を辿って val との XOR が最小になる要素を探索
+            auto find_min = [&amp;](int search_u, ll val) -&gt; pair&lt;ll, int&gt; {
+                int curr = search_u;
+                for (int b = bit - 1; b &gt;= 0; b--) {
+                    int v_bit = (val &gt;&gt; b) &amp; 1;
+                    if (trie[curr].ch[v_bit] != -1) {
+                        curr = trie[curr].ch[v_bit];
+                    } else {
+                        curr = trie[curr].ch[v_bit ^ 1];
+                    }
+                }
+                return {val ^ val_idx[trie[curr].l].first, val_idx[trie[curr].l].second};
+            };
+            
+            // 要素数が少ない方のグループを全探索 (マージテク・Borůvka法の応用)
+            if (len_l &lt;= len_r) {
+                for (int i = trie[lc].l; i &lt;= trie[lc].r; i++) {
+                    auto best = find_min(rc, val_idx[i].first);
+                    if (best.first &lt; min_w) {
+                        min_w = best.first;
+                        best_edge = {val_idx[i].second, best.second};
+                    }
+                }
+            } else {
+                for (int i = trie[rc].l; i &lt;= trie[rc].r; i++) {
+                    auto best = find_min(lc, val_idx[i].first);
+                    if (best.first &lt; min_w) {
+                        min_w = best.first;
+                        best_edge = {val_idx[i].second, best.second};
+                    }
+                }
+            }
+            
+            total_weight += min_w;
+            mst_edges.push_back(best_edge);
+        }
+    };
+    
+    dfs(dfs, 0, max_bit);
+    return {total_weight, mst_edges};
+}</code></pre>
+        </div>
+    </div>
+
+    <div
+        class="template-collection"
+        style="margin-top: 15px"
+    >
+        <h4
+            style="
+                margin-bottom: 5px;
+                font-size: 0.95em;
+                color: #555;
+            "
+        >
+            ▼ 使い方
+        </h4>
+
+        <details class="snippet-details">
+            <summary>
+                基本的な使い方 (MSTの構築と重み・辺の取得)
+            </summary>
+            <pre><code class="hljs language-c++">int main() {
+    // 頂点数 N
+    int N = 5;
+    // N個の頂点の値 A_i
+    vector&lt;ll&gt; A = {1, 2, 3, 4, 5};
+
+    // XOR MST を構築
+    auto [mst_weight, mst_edges] = xor_mst(A);
+
+    cout &lt;&lt; "MSTの総コスト: " &lt;&lt; mst_weight &lt;&lt; "\n";
+    cout &lt;&lt; "結ばれた辺 (頂点インデックス):\n";
+    for (auto [u, v] : mst_edges) {
+        cout &lt;&lt; u &lt;&lt; " - " &lt;&lt; v &lt;&lt; "\n";
+    }
+    
+    return 0;
+}</code></pre>
+        </details>
+        <details class="snippet-details">
+            <summary>
+                重複する値が含まれる場合 (そのまま適用可能)
+            </summary>
+            <pre><code class="hljs language-c++">int main() {
+    int N = 5;
+    // 全く同じ値が複数含まれるケース
+    // Manhattan MSTと異なり、事前処理による重複除去は不要です
+    vector&lt;ll&gt; A = {7, 7, 7, 10, 10};
+
+    // アルゴリズム内で重複値は自動的に「コスト0の辺」として連結されます
+    auto [mst_weight, mst_edges] = xor_mst(A);
+
+    cout &lt;&lt; "MSTの総コスト: " &lt;&lt; mst_weight &lt;&lt; "\n"; // 総コストは 7^10 のみとなる
+    
+    // 必要なら辺もそのまま利用できます
+    for (auto [u, v] : mst_edges) {
+        cout &lt;&lt; u &lt;&lt; " - " &lt;&lt; v &lt;&lt; " (cost " &lt;&lt; (A[u] ^ A[v]) &lt;&lt; ")\n";
+    }
+
+    return 0;
+}</code></pre>
+        </details>
+    </div>
+</div>
+
+<div class="function-note" id="triangle-count">
+    <div class="function-header">
+        <h3 class="function-name">Triangle Count (次数の偏りを利用した $K_3$ 探索)</h3>
+        <p class="function-purpose">
+            <span class="label">用途:</span>
+            一般の無向グラフにおいて、長さ3の閉路（三角形）の総数を高速に数え上げる。頂点数 $N, M \le 10^5$ のような巨大なグラフにも対応する。
+        </p>
+    </div>
+    <p>
+        <strong>計算量:</strong> O(M √M)<br>
+        単純に3重ループで探すと O(N^3) となるが、すべての無向辺を「次数の小さい頂点から大きい頂点へ（次数が同じなら頂点番号の小さい方へ）」というルールで有向辺に変換することで、どの頂点も出次数が高々 O(√M) に抑えられるという強烈な性質（グラフの縮退度）を利用。各有向辺 u → v について、共通の行き先 w を探すことで、全体 O(M √M) で三角形を数え上げる。
+    </p>
+    <div
+        class="code-block"
+        data-custom-lines="true"
+        aria-label="Code block"
+    >
+        <div class="code-toolbar">
+            <span class="lang-label" aria-hidden="true">C++</span>
+            <button
+                class="copy-btn"
+                type="button"
+                aria-label="Copy code"
+            >
+                Copy
+            </button>
+        </div>
+        <div class="code-wrap">
+            <pre><code class="hljs language-c++" spellcheck="false">// Triangle Count 本体
+// 戻り値: グラフに含まれる三角形(長さ3の閉路)の総数
+long long triangle_count(int n, const vector&lt;pair&lt;int, int&gt;&gt;&amp; edges) {
+    // 1. 各頂点の次数を計算
+    vector&lt;int&gt; deg(n, 0);
+    for (auto [u, v] : edges) {
+        deg[u]++;
+        deg[v]++;
+    }
+
+    // 2. 次数小 → 次数大 (同じなら頂点番号小 → 大) へと向き付けした隣接リストを構築
+    vector&lt;vector&lt;int&gt;&gt; adj(n);
+    for (auto [u, v] : edges) {
+        bool dir_u_to_v = false;
+        if (deg[u] &lt; deg[v]) {
+            dir_u_to_v = true;
+        } else if (deg[u] == deg[v] &amp;&amp; u &lt; v) {
+            dir_u_to_v = true;
+        }
+
+        if (dir_u_to_v) {
+            adj[u].push_back(v);
+        } else {
+            adj[v].push_back(u);
+        }
+    }
+
+    long long count = 0;
+    // 頂点uの隣接頂点を O(1) で判定するための配列
+    vector&lt;bool&gt; is_adj(n, false); 
+
+    // 3. 各頂点を始点として三角形を探索
+    for (int u = 0; u &lt; n; u++) {
+        // u の行き先をマーク
+        for (int v : adj[u]) is_adj[v] = true;
+        
+        // u → v → w と辿り、u → w の辺があるか確認
+        for (int v : adj[u]) {
+            for (int w : adj[v]) {
+                if (is_adj[w]) {
+                    count++;
+                }
+            }
+        }
+        
+        // 次の頂点に備えてマークをリセット（毎回配列を初期化するより高速）
+        for (int v : adj[u]) is_adj[v] = false;
+    }
+
+    return count;
+}</code></pre>
+        </div>
+    </div>
+
+    <div
+        class="template-collection"
+        style="margin-top: 15px"
+    >
+        <h4
+            style="
+                margin-bottom: 5px;
+                font-size: 0.95em;
+                color: #555;
+            "
+        >
+            ▼ 使い方
+        </h4>
+
+        <details class="snippet-details">
+            <summary>
+                基本的な使い方 (三角形のカウント)
+            </summary>
+            <pre><code class="hljs language-c++">int main() {
+    // 頂点数 N
+    int N = 5;
+    // 無向辺のリスト
+    vector&lt;pair&lt;int, int&gt;&gt; edges = {
+        {0, 1}, {1, 2}, {2, 0}, // 三角形1: (0, 1, 2)
+        {0, 2}, {2, 3}, {3, 0}, // 三角形2: (0, 2, 3)
+        {3, 4}                  // どこにも属さない辺
+    };
+
+    // 三角形の総数を数え上げる
+    long long cnt = triangle_count(N, edges);
+
+    cout &lt;&lt; "三角形の数: " &lt;&lt; cnt &lt;&lt; "\n"; // 出力: 2
+    
+    return 0;
+}</code></pre>
+        </details>
+
+        <details class="snippet-details">
+            <summary>
+                【備考】密グラフ向けの bitset による高速化 (O(N^3 / 64))
+            </summary>
+            <p style="margin: 10px 15px; font-size: 0.9em; color: #444;">
+                頂点数 $N$ が $2000 \sim 3000$ 程度までの場合は、隣接行列を <code>std::bitset</code> で持ち、AND演算を使うことで定数倍を 1/64 にする手法が非常に高速です。問題の制約によって使い分けてください。
+            </p>
+            <pre><code class="hljs language-c++">#include &lt;bitset&gt;
+
+int main() {
+    int N = 5;
+    vector&lt;pair&lt;int, int&gt;&gt; edges = /* ... */;
+
+    // Nの上限が固定の場合は直接サイズを指定 (例: 2000)
+    const int MAX_N = 2000;
+    vector&lt;bitset&lt;MAX_N&gt;&gt; adj(N);
+
+    // 無向グラフの隣接行列を構築
+    for (auto [u, v] : edges) {
+        adj[u].set(v);
+        adj[v].set(u);
+    }
+
+    long long count = 0;
+    for (int i = 0; i &lt; N; i++) {
+        for (int j = i + 1; j &lt; N; j++) {
+            if (adj[i][j]) {
+                // i と j の両方に隣接する頂点(共通の隣接頂点)をまとめてカウント
+                count += (adj[i] &amp; adj[j]).count();
+            }
+        }
+    }
+    // 1つの三角形につき3本の辺それぞれでカウントされてしまうため3で割る
+    count /= 3;
+
+    cout &lt;&lt; "三角形の数: " &lt;&lt; count &lt;&lt; "\n";
+    return 0;
+}</code></pre>
+        </details>
+    </div>
+</div>
 
 <div class="function-note" id="max-flow-min-cut">
     <div class="function-header">
@@ -19107,7 +20640,7 @@ struct GridPathMatching {
         ▼ 使い方
     </h4>
 
-    <details class="snippet-details" open>
+    <details class="snippet-details">
         <summary>
             一筆書き（ハミルトンパス／閉路）の取得 ＆ マッチング相手の参照
         </summary>
@@ -19170,8 +20703,6 @@ auto [r2, c2] = table2[1][0]; // {2, 0} が返る</code></pre>
                             <li><a href="#dp-lis">LIS</a></li>
                             <li><a href="#dp-weighted-lis">重み付きLIS</a></li>
                             <li><a href="#dp-2d-lis">2次元LIS</a></li>
-                            <li><a href="#dp-lcs">最長共通部分列（愚直）</a></li>
-                            <li><a href="#dp-optimized-lcs">最長共通部分列（高速）</a></li>
                         </ul>
                     </nav>
 
@@ -19862,278 +21393,7 @@ ll ans = dp.size();</code></pre>
                         </p>
                     </div>
 
-<div class="function-note" id="dp-lcs">
-    <div class="function-header">
-        <h3 class="function-name">最長共通部分列 (LCS - 愚直解/基本形)</h3>
-        <p class="function-purpose">
-            <span class="label">用途:</span>
-            2つの文字列（または配列）に共通して含まれる部分列のうち、最も長いものの「長さ」や「部分列そのもの」を求める
-        </p>
-    </div>
-    <p>
-        <strong>計算量:</strong> O(|S||T|) <br />
-        <strong>設計:</strong>
-        2次元の動的計画法 (DP) を用います。<code>dp[i][j]</code> を「文字列 S の i 文字目までと、文字列 T の j 文字目までを見たときの LCS の長さ」と定義します。末尾の文字が一致すれば <code>dp[i-1][j-1] + 1</code>、一致しなければ <code>max(dp[i-1][j], dp[i][j-1])</code> としてテーブルを埋めていきます。
-    </p>
-    <div
-        class="code-block"
-        data-custom-lines="true"
-        aria-label="Code block"
-    >
-        <div class="code-toolbar">
-            <span class="lang-label" aria-hidden="true">C++</span>
-            <button
-                class="copy-btn"
-                type="button"
-                aria-label="Copy code"
-            >
-                Copy
-            </button>
-        </div>
-        <div class="code-wrap">
-            <pre><code class="hljs language-c++" spellcheck="false">// 2つの文字列 S, T の LCS の長さを O(|S||T|) で求める
-ll lcs_length(const string&amp; S, const string&amp; T) {
-    ll n = S.size();
-    ll m = T.size();
-    
-    // dp[i][j] := Sをi文字、Tをj文字目まで見たときのLCSの長さ
-    vector&lt;vector&lt;ll&gt;&gt; dp(n + 1, vector&lt;ll&gt;(m + 1, 0));
 
-    for (ll i = 0; i &lt; n; i++) {
-        for (ll j = 0; j &lt; m; j++) {
-            if (S[i] == T[j]) {
-                // 文字が一致していれば、両方から1文字ずつ進める
-                dp[i + 1][j + 1] = dp[i][j] + 1;
-            } else {
-                // 一致していなければ、どちらかを1文字進めた状態の最大値を取る
-                dp[i + 1][j + 1] = max(dp[i][j + 1], dp[i + 1][j]);
-            }
-        }
-    }
-    
-    return dp[n][m];
-}</code></pre>
-        </div>
-    </div>
-    <p>
-        <strong>注意:</strong>
-        空間計算量も O(|S||T|) となります。文字数（|S|, |T|）がそれぞれ 3000〜5000 程度までなら通常は問題なく動作しますが、10<sup>5</sup> オーダーになるとメモリ（および実行時間）の制限に引っかかるため、配列の使い回し（空間計算量 O(|T|) への削減）や、先に挙げた高速化手法を検討する必要があります。
-    </p>
-
-    <div
-        class="template-collection"
-        style="margin-top: 15px"
-    >
-        <h4
-            style="
-                margin-bottom: 5px;
-                font-size: 0.95em;
-                color: #555;
-            "
-        >
-            ▼ 使い方と応用パターン
-        </h4>
-
-        <details class="snippet-details">
-            <summary>
-                応用：LCS の長さだけでなく、文字列そのものを復元する
-            </summary>
-            <pre><code class="hljs language-c++">string restore_lcs(const string&amp; S, const string&amp; T) {
-    ll n = S.size();
-    ll m = T.size();
-    vector&lt;vector&lt;ll&gt;&gt; dp(n + 1, vector&lt;ll&gt;(m + 1, 0));
-
-    for (ll i = 0; i &lt; n; i++) {
-        for (ll j = 0; j &lt; m; j++) {
-            if (S[i] == T[j]) dp[i + 1][j + 1] = dp[i][j] + 1;
-            else dp[i + 1][j + 1] = max(dp[i][j + 1], dp[i + 1][j]);
-        }
-    }
-
-    // DPテーブルを後ろから辿って文字列を復元する
-    string res = "";
-    ll i = n, j = m;
-    while (i &gt; 0 &amp;&amp; j &gt; 0) {
-        if (dp[i][j] == dp[i - 1][j]) {
-            i--; // S側の文字を減らす
-        } else if (dp[i][j] == dp[i][j - 1]) {
-            j--; // T側の文字を減らす
-        } else {
-            // 左上から来た場合（文字が一致している）
-            res += S[i - 1];
-            i--;
-            j--;
-        }
-    }
-    // 後ろから辿ったので反転させる
-    reverse(res.begin(), res.end());
-    return res;
-}
-
-// 使い方
-// string S = "axyb";
-// string T = "aby";
-// cout &lt;&lt; restore_lcs(S, T) &lt;&lt; endl; // "ay" または "ab" (この場合 "ay")</code></pre>
-        </details>
-    </div>
-</div>                    
-
-<div class="function-note" id="dp-optimized-lcs">
-    <div class="function-header">
-        <h3 class="function-name">高速化された LCS (片方の要素が重複しない場合)</h3>
-        <p class="function-purpose">
-            <span class="label">用途:</span>
-            文字列 S の各文字（または配列の要素）がすべて異なるとき、S と T の最長共通部分列 (LCS) の長さを高速に求め、さらにその文字列自体を復元する
-        </p>
-    </div>
-    <p>
-        <strong>計算量:</strong> O(|S| + |T| log |T|) <br />
-        <strong>設計:</strong>
-        S の文字に重複がないことを利用し、S の各文字を「S の中でのインデックス」に置き換えます。その後、T の各文字を S の対応するインデックスに変換した数列を作ると、この数列における<strong>最長増加部分列 (LIS) の長さが、元の S と T の LCS の長さと一致</strong>します。LIS は二分探索（<code>std::lower_bound</code>）を用いて O(|T| log |T|) で計算できます。
-    </p>
-    <div
-        class="code-block"
-        data-custom-lines="true"
-        aria-label="Code block"
-    >
-        <div class="code-toolbar">
-            <span class="lang-label" aria-hidden="true">C++</span>
-            <button
-                class="copy-btn"
-                type="button"
-                aria-label="Copy code"
-            >
-                Copy
-            </button>
-        </div>
-        <div class="code-wrap">
-            <pre><code class="hljs language-c++" spellcheck="false">// S の各文字が互いに異なる場合の LCS を O(|S| + |T|log|T|) で求める
-ll optimized_lcs(const string&amp; S, const string&amp; T) {
-    // 1. S の各文字の出現位置を記録（S の文字は重複しない前提）
-    // ※文字の種類が ASCII (256種類) に収まる場合の配列。
-    // ※数値配列や種類が多い場合は map&lt;ll, ll&gt; などを利用してください。
-    vector&lt;ll&gt; pos(256, -1); 
-    for (ll i = 0; i &lt; (ll)S.size(); i++) {
-        pos[S[i]] = i;
-    }
-
-    // 2. T の各文字を S でのインデックスに変換し、配列 A を作成
-    vector&lt;ll&gt; A;
-    for (char c : T) {
-        if (pos[c] != -1) {
-            A.push_back(pos[c]);
-        }
-    }
-
-    // 3. 配列 A の LIS (最長増加部分列) の長さを求める
-    const ll INF = 1e18;
-    vector&lt;ll&gt; dp(A.size() + 1, INF);
-    
-    for (ll x : A) {
-        // x 以上の値が最初に現れる位置を二分探索で見つけて更新
-        auto it = lower_bound(dp.begin(), dp.end(), x);
-        *it = x;
-    }
-    
-    // INF でない要素の数が LIS (＝LCS) の長さ
-    ll lcs_len = lower_bound(dp.begin(), dp.end(), INF) - dp.begin();
-    return lcs_len;
-}</code></pre>
-        </div>
-    </div>
-    <p>
-        <strong>注意:</strong>
-        このアルゴリズムは <strong>S に同じ要素が2つ以上存在しない</strong> という強い制約がある場合にのみ有効です。数列（<code>vector&lt;ll&gt;</code>）に対して適用する場合は、<code>pos</code> の管理を <code>map&lt;ll, ll&gt;</code> や座標圧縮を用いた配列に変更してください。
-    </p>
-
-    <div
-        class="template-collection"
-        style="margin-top: 15px"
-    >
-        <h4
-            style="
-                margin-bottom: 5px;
-                font-size: 0.95em;
-                color: #555;
-            "
-        >
-            ▼ 使い方と応用パターン
-        </h4>
-
-        <details class="snippet-details">
-            <summary>
-                基本の使い方
-            </summary>
-            <pre><code class="hljs language-c++">void solve() {
-    // S は文字に重複がない ("abcde")
-    string S = "abcde";
-    // T は文字に重複があってもよい
-    string T = "acebd";
-
-    ll ans = optimized_lcs(S, T);
-    
-    // T の 'a', 'c', 'e' もしくは 'a', 'b', 'd' などを拾う
-    // 最長は "ace" や "abd" なので長さは 3
-    cout &lt;&lt; "LCSの長さ: " &lt;&lt; ans &lt;&lt; endl; // 3
-}</code></pre>
-        </details>
-
-        <details class="snippet-details">
-            <summary>
-                応用：インデックスを追跡して LCS の文字列そのものを復元する
-            </summary>
-            <pre><code class="hljs language-c++">// 長さだけでなく、復元された文字列を返すバージョン
-string restore_optimized_lcs(const string&amp; S, const string&amp; T) {
-    vector&lt;ll&gt; pos(256, -1);
-    for (ll i = 0; i &lt; (ll)S.size(); i++) pos[S[i]] = i;
-
-    vector&lt;ll&gt; A;
-    for (char c : T) {
-        if (pos[c] != -1) A.push_back(pos[c]);
-    }
-
-    if (A.empty()) return "";
-
-    const ll INF = 1e18;
-    vector&lt;ll&gt; dp(A.size(), INF);
-    // 復元用の配列
-    vector&lt;ll&gt; id(A.size(), -1);  // dp[i] に入っている要素の、配列 A におけるインデックス
-    vector&lt;ll&gt; pre(A.size(), -1); // A[i] が LIS に追加されたときの、直前の要素の A におけるインデックス
-    
-    ll lcs_len = 0;
-    ll last_idx = -1; // LIS の末尾となる要素の A におけるインデックス
-
-    for (ll i = 0; i &lt; (ll)A.size(); i++) {
-        ll p = lower_bound(dp.begin(), dp.end(), A[i]) - dp.begin();
-        dp[p] = A[i];
-        id[p] = i;
-        if (p &gt; 0) pre[i] = id[p - 1]; // LIS における一つ前の要素のインデックスを記録
-        
-        if (p + 1 &gt; lcs_len) {
-            lcs_len = p + 1;
-            last_idx = i;
-        }
-    }
-
-    // 記録したインデックスを後ろから辿って文字列を復元
-    string res = "";
-    ll curr = last_idx;
-    while (curr != -1) {
-        res += S[A[curr]]; // A[curr] は S におけるインデックス
-        curr = pre[curr];
-    }
-    reverse(res.begin(), res.end());
-    
-    return res;
-}
-
-// 使い方
-// string S = "abcde";
-// string T = "acebd";
-// cout &lt;&lt; restore_optimized_lcs(S, T) &lt;&lt; endl; // "ace" または "abd" (この実装では "abd" が出力される)</code></pre>
-        </details>
-    </div>
-</div>
 
                 </section>
 
