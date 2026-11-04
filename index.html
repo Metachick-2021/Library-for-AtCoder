@@ -18646,6 +18646,11 @@ cout &lt;&lt; ans.val() &lt;&lt; endl; // 出力: 6 (0-1の選び方3通り × 1
                                 >
                             </li> 
                             <li>
+                                <a href="#histogram-convex-hull-advanced"
+                                    >ヒストグラムの凸包</a
+                                >
+                            </li>  
+                            <li>
                                 <a href="#largest-rectangle-histogram"
                                     >ヒストグラムの最大長方形</a
                                 >
@@ -20135,6 +20140,193 @@ auto dfs = [&amp;](auto&amp; dfs, ll v) -&gt; ll {
 };
 
 ll ans = dfs(dfs, ct.root);</code></pre>
+                            </details>
+                        </div>
+                    </div>
+                    
+<div class="function-note" id="histogram-convex-hull-advanced">
+                        <div class="function-header">
+                            <h3 class="function-name">ヒストグラムの凸包 (多機能版 / Convex Hull Trick 対応)</h3>
+                            <p class="function-purpose">
+                                <span class="label">用途:</span>
+                                逐次追加されるヒストグラムの凸包を管理し、直結点の取得や面積計算、二分探索による最大値クエリ（CHT）をサポートする
+                            </p>
+                        </div>
+                        <p>
+                            <strong>計算量:</strong> 点の追加はならし $O(1)$。最大値クエリは二分探索により $O(\log K)$ （$K$ は凸包の頂点数）。<br>
+                            単なる凸包の取得にとどまらず、DPの最適化（Convex Hull Trick）や幾何的な性質の動的計算にすぐ使える実戦的な実装です。
+                        </p>
+                        <div
+                            class="code-block"
+                            data-custom-lines="true"
+                            aria-label="Code block"
+                        >
+                            <div class="code-toolbar">
+                                <span class="lang-label" aria-hidden="true">C++ (C++17以上)</span>
+                                <button
+                                    class="copy-btn"
+                                    type="button"
+                                    aria-label="Copy code"
+                                >
+                                    Copy
+                                </button>
+                            </div>
+                            <div class="code-wrap">
+                                <pre><code class="hljs language-c++" spellcheck="false">#include &lt;vector&gt;
+#include &lt;optional&gt;
+#include &lt;algorithm&gt;
+
+using namespace std;
+
+struct Point {
+    long long x, y;
+};
+
+class AdvancedHistogramConvexHull {
+private:
+    vector&lt;Point&gt; upper_hull;
+
+    // 3点の外積。負なら右回り(時計回り)、正なら左回り(反時計回り)
+    long long cross_product(Point p1, Point p2, Point p3) const {
+        return (p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x);
+    }
+
+public:
+    // 点を追加し、直結した（削除されずに残った最も右の）点を返す
+    // 最初の点の追加時など、直結点がない場合は std::nullopt を返す
+    std::optional&lt;Point&gt; add_point(long long x, long long h) {
+        Point p = {x, h};
+        
+        while (upper_hull.size() &gt;= 2) {
+            Point p1 = upper_hull[upper_hull.size() - 2];
+            Point p2 = upper_hull[upper_hull.size() - 1];
+            if (cross_product(p1, p2, p) &gt;= 0) {
+                upper_hull.pop_back(); // 凹んでいるので削除
+            } else {
+                break;
+            }
+        }
+        
+        std::optional&lt;Point&gt; connected_point = std::nullopt;
+        if (!upper_hull.empty()) {
+            connected_point = upper_hull.back(); // 削除されずに残った最も右の点
+        }
+        
+        upper_hull.push_back(p);
+        return connected_point;
+    }
+
+    // 上側凸包を構成する点の一覧（左から右への順序）を取得
+    const vector&lt;Point&gt;&amp; get_upper_hull() const {
+        return upper_hull;
+    }
+
+    // 全体の凸包を構成する点の一覧を反時計回り(CCW)で取得
+    vector&lt;Point&gt; get_full_hull() const {
+        if (upper_hull.empty()) return {};
+        
+        vector&lt;Point&gt; hull;
+        // 内部では上側の点しか管理していないので、底面 (y=0) をここで補完する
+        hull.push_back({upper_hull.front().x, 0}); // 左下の点
+        if (upper_hull.back().x != upper_hull.front().x) {
+            hull.push_back({upper_hull.back().x, 0}); // 右下の点
+        }
+        
+        // 上側凸包を右から左へ辿ることで、反時計回りに閉じる
+        for (int i = upper_hull.size() - 1; i &gt;= 0; --i) {
+            hull.push_back(upper_hull[i]);
+        }
+        return hull;
+    }
+
+    // 便利機能1: 現在の凸包の面積の 2倍 を返す (整数のまま計算するため)
+    // 実面積が必要な場合は 2.0 で割る
+    long long get_area_x2() const {
+        vector&lt;Point&gt; hull = get_full_hull();
+        long long area = 0;
+        int n = hull.size();
+        for (int i = 0; i &lt; n; ++i) {
+            area += (hull[i].x * hull[(i + 1) % n].y - hull[(i + 1) % n].x * hull[i].y);
+        }
+        return abs(area);
+    }
+
+    // 便利機能2: 傾き `slope` の直線 y = slope * x + b が凸包と接するときの最大切片 b を求める
+    // Convex Hull Trick (CHT) における最大値検索 (二分探索により O(log N))
+    long long get_max_intercept(long long slope) const {
+        if (upper_hull.empty()) return 0;
+        
+        int left = 0, right = upper_hull.size() - 1;
+        while (right - left &gt;= 3) {
+            int m1 = left + (right - left) / 3;
+            int m2 = right - (right - left) / 3;
+            long long v1 = upper_hull[m1].y - slope * upper_hull[m1].x;
+            long long v2 = upper_hull[m2].y - slope * upper_hull[m2].x;
+            if (v1 &lt; v2) {
+                left = m1;
+            } else {
+                right = m2;
+            }
+        }
+        
+        long long max_val = upper_hull[left].y - slope * upper_hull[left].x;
+        for (int i = left + 1; i &lt;= right; ++i) {
+            max_val = max(max_val, upper_hull[i].y - slope * upper_hull[i].x);
+        }
+        return max_val;
+    }
+};</code></pre>
+                            </div>
+                        </div>
+
+                        <div
+                            class="template-collection"
+                            style="margin-top: 15px"
+                        >
+                            <h4
+                                style="
+                                    margin-bottom: 5px;
+                                    font-size: 0.95em;
+                                    color: #555;
+                                "
+                            >
+                                ▼ 使い方 (拡張機能と点の一覧確認)
+                            </h4>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    直結点の取得、点の一覧確認、便利機能の呼び出し方
+                                </summary>
+                                <pre><code class="hljs language-c++">AdvancedHistogramConvexHull hc;
+
+// 1. 点を追加し、直前の頂点（直結した点）を取得する
+auto prev1 = hc.add_point(1, 2); // std::nullopt
+auto prev2 = hc.add_point(2, 1); // prev2.value() は (1, 2)
+auto prev3 = hc.add_point(3, 5); // (2, 1)が削除され、prev3.value() は (1, 2)
+
+// 2. 凸包を構成する点の一覧を確認する
+// 【パターンA】上側の輪郭だけが必要な場合
+vector&lt;Point&gt; upper = hc.get_upper_hull();
+cout &lt;&lt; "--- 上側の点 (左から右) ---\n";
+for (const auto&amp; p : upper) {
+    cout &lt;&lt; "(" &lt;&lt; p.x &lt;&lt; ", " &lt;&lt; p.y &lt;&lt; ")\n";
+}
+
+// 【パターンB】底面 (y=0) を含めた多角形全体が必要な場合
+vector&lt;Point&gt; full = hc.get_full_hull();
+cout &lt;&lt; "--- 全体の点 (反時計回り) ---\n";
+for (const auto&amp; p : full) {
+    cout &lt;&lt; "(" &lt;&lt; p.x &lt;&lt; ", " &lt;&lt; p.y &lt;&lt; ")\n";
+}
+
+// 3. 面積の計算
+long long area_x2 = hc.get_area_x2();
+cout &lt;&lt; "実際の面積: " &lt;&lt; area_x2 / 2.0 &lt;&lt; "\n";
+
+// 4. Convex Hull Trick クエリ
+long long max_b = hc.get_max_intercept(2);
+cout &lt;&lt; "傾き2での最大切片: " &lt;&lt; max_b &lt;&lt; "\n";
+</code></pre>
                             </details>
                         </div>
                     </div>
