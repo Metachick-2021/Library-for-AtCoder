@@ -4723,6 +4723,12 @@ ll tz = __builtin_ctz((unsigned)x);
                                     >フック長公式</a
                                 >
                             </li>
+                            
+                            <li>
+                                <a href="#tree-random-walk"
+                                    >木上のランダムウォーク</a
+                                >
+                            </li>
                         </ul>
                     </nav>
 
@@ -7087,7 +7093,364 @@ cout &lt;&lt; "SYT Count: " &lt;&lt; syt_count &lt;&lt; endl;
     </div>
 </div>
 
+<div class="function-note" id="tree-random-walk">
+    <div class="function-header">
+        <h3 class="function-name">木上のランダムウォーク（期待値DP ＆ 高速クエリ）</h3>
+        <p class="function-purpose">
+            <span class="label">用途:</span>
+            木上のランダムウォークに関する期待歩数、到達確率、訪問期待回数の計算。<br>
+            遷移確率が均等の場合や、任意の辺重みに基づく遷移確率の調整にも対応。<br>
+            DPによる一括計算($O(N)$)と、LCAを用いた任意の2点間クエリ($O(\log N)$)を両立。
+        </p>
+    </div>
+    <p>
+        <strong>計算量:</strong> 
+        状態指定の汎用DP: $O(N)$。<br>
+        2点間の到達期待歩数クエリ: 前計算 $O(N \log N)$、クエリ $O(\log N)$。
+    </p>
 
+    <div
+        class="code-block"
+        data-custom-lines="true"
+        aria-label="Code block"
+    >
+        <div class="code-toolbar">
+            <span class="lang-label" aria-hidden="true">C++</span>
+            <button
+                class="copy-btn"
+                type="button"
+                aria-label="Copy code"
+            >
+                Copy
+            </button>
+        </div>
+        <div class="code-wrap">
+            <pre><code class="hljs language-c++" spellcheck="false">using ll = long long;
+using ld = long double;
+
+// 汎用性のため、ld (long double) や modint (例: modint998244353) を T に指定できる
+template&lt;typename T&gt;
+struct TreeRandomWalk {
+    struct Edge {
+        ll to;
+        T w;
+    };
+    ll n;
+    vector&lt;vector&lt;Edge&gt;&gt; g;
+    vector&lt;T&gt; weight_sum;
+    T total_weight_sum;
+
+    // 高速クエリ(LCA)用
+    bool is_built_lca = false;
+    ll logV;
+    vector&lt;vector&lt;ll&gt;&gt; parent;
+    vector&lt;ll&gt; depth;
+    vector&lt;T&gt; dist_up;
+    vector&lt;T&gt; dist_down;
+
+    TreeRandomWalk(ll n) : n(n), g(n), weight_sum(n, T(0)), total_weight_sum(T(0)) {}
+    
+    // w: 遷移の重み（等分布なら省略で1になる。遷移確率は周囲の辺の重みの割合で決まる）
+    void add_edge(ll u, ll v, T w = T(1)) {
+        g[u].push_back({v, w});
+        g[v].push_back({u, w});
+        weight_sum[u] += w;
+        weight_sum[v] += w;
+        total_weight_sum += w * T(2);
+    }
+    
+    // --- 1. 高速クエリ (任意の u から v への期待歩数) ---
+    void build_fast_query(ll root = 0) {
+        logV = 1;
+        while ((1LL &lt;&lt; logV) &lt;= n) logV++;
+        parent.assign(logV, vector&lt;ll&gt;(n, -1));
+        depth.assign(n, 0);
+        dist_up.assign(n, T(0));
+        dist_down.assign(n, T(0));
+
+        vector&lt;T&gt; sub_W(n, T(0));
+
+        // 1回目のDFS: 各部分木の重み和を計算
+        auto dfs1 = [&amp;](auto&amp; self, ll u, ll p, ll d) -&gt; void {
+            parent[0][u] = p;
+            depth[u] = d;
+            sub_W[u] = weight_sum[u];
+            for (auto&amp; edge : g[u]) {
+                ll v = edge.to;
+                if (v == p) continue;
+                self(self, v, u, d + 1);
+                sub_W[u] += sub_W[v];
+            }
+        };
+        dfs1(dfs1, root, -1, 0);
+
+        // 2回目のDFS: 木を切断した際の連結成分の重み和を用いてパスの期待値を累積
+        auto dfs2 = [&amp;](auto&amp; self, ll u, ll p) -&gt; void {
+            for (auto&amp; edge : g[u]) {
+                ll v = edge.to;
+                if (v == p) continue;
+                T w = edge.w;
+                // v から u への期待歩数
+                T E_v_to_u = sub_W[v] / w;
+                // u から v への期待歩数
+                T E_u_to_v = (total_weight_sum - sub_W[v]) / w;
+
+                dist_up[v] = dist_up[u] + E_v_to_u;
+                dist_down[v] = dist_down[u] + E_u_to_v;
+                
+                self(self, v, u);
+            }
+        };
+        dfs2(dfs2, root, -1);
+
+        // ダブリングテーブル構築
+        for (ll k = 0; k + 1 &lt; logV; k++) {
+            for (ll u = 0; u &lt; n; u++) {
+                if (parent[k][u] &lt; 0) parent[k + 1][u] = -1;
+                else parent[k + 1][u] = parent[k][parent[k][u]];
+            }
+        }
+        is_built_lca = true;
+    }
+
+    ll get_lca(ll u, ll v) {
+        if (!is_built_lca) build_fast_query();
+        if (depth[u] &gt; depth[v]) swap(u, v);
+        for (ll k = 0; k &lt; logV; k++) {
+            if (((depth[v] - depth[u]) &gt;&gt; k) &amp; 1) {
+                v = parent[k][v];
+            }
+        }
+        if (u == v) return u;
+        for (ll k = logV - 1; k &gt;= 0; k--) {
+            if (parent[k][u] != parent[k][v]) {
+                u = parent[k][u];
+                v = parent[k][v];
+            }
+        }
+        return parent[0][u];
+    }
+
+    // u から v に到達するまでの期待歩数
+    T expected_steps_fast(ll u, ll v) {
+        if (!is_built_lca) build_fast_query();
+        ll lca = get_lca(u, v);
+        T E_u_lca = dist_up[u] - dist_up[lca];
+        T E_lca_v = dist_down[v] - dist_down[lca];
+        return E_u_lca + E_lca_v;
+    }
+
+    // --- 2. 汎用DPソルバー (複数ゴールや確率、訪問回数など) ---
+    // is_fixed[u]: 境界条件として固定されているか
+    // fixed_val[u]: 固定値
+    // C[u]: 1ステップごとの加算コスト
+    vector&lt;T&gt; solve(const vector&lt;bool&gt;&amp; is_fixed, const vector&lt;T&gt;&amp; fixed_val, const vector&lt;T&gt;&amp; C) {
+        vector&lt;T&gt; A(n, T(0)), B(n, T(0));
+        vector&lt;T&gt; ans(n, T(0));
+        
+        ll root = -1;
+        for (ll i = 0; i &lt; n; i++) {
+            if (is_fixed[i]) { root = i; break; }
+        }
+        if (root == -1) return ans;
+        
+        auto dfs_bottom_up = [&](auto& self, ll u, ll p) -> void {
+            T sum_A = T(0), sum_B = T(0);
+            T p_weight = T(0);
+            
+            // 先にすべての子頂点を探索する
+            for (auto& edge : g[u]) {
+                ll v = edge.to;
+                if (v == p) {
+                    p_weight = edge.w;
+                    continue;
+                }
+                self(self, v, u);
+                sum_A += edge.w * A[v];
+                sum_B += edge.w * B[v];
+            }
+            
+            // 子の探索後に自分自身の係数を決定する
+            if (is_fixed[u]) {
+                A[u] = T(0);
+                B[u] = fixed_val[u];
+            } else {
+                T den = weight_sum[u] - sum_A;
+                if (p != -1) A[u] = p_weight / den;
+                else A[u] = T(0);
+                B[u] = (sum_B + weight_sum[u] * C[u]) / den;
+            }
+        };
+        dfs_bottom_up(dfs_bottom_up, root, -1);
+        
+        auto dfs_top_down = [&amp;](auto&amp; self, ll u, ll p) -&gt; void {
+            if (p == -1) ans[u] = B[u];
+            else ans[u] = A[u] * ans[p] + B[u];
+            
+            for (auto&amp; edge : g[u]) {
+                ll v = edge.to;
+                if (v == p) continue;
+                self(self, v, u);
+            }
+        };
+        dfs_top_down(dfs_top_down, root, -1);
+        return ans;
+    }
+    
+    // DP: ゴールリストに到達するまでの期待歩数
+    vector&lt;T&gt; expected_steps(const vector&lt;ll&gt;&amp; goals) {
+        vector&lt;bool&gt; is_fixed(n, false);
+        vector&lt;T&gt; fixed_val(n, T(0));
+        vector&lt;T&gt; C(n, T(1));
+        for (ll g_node : goals) {
+            is_fixed[g_node] = true;
+        }
+        return solve(is_fixed, fixed_val, C);
+    }
+    
+    // DP: ターゲットのいずれかに到達する確率 (avoid_nodesは吸収されるが到達扱いしない)
+    vector&lt;T&gt; hit_probability(const vector&lt;ll&gt;&amp; targets, const vector&lt;ll&gt;&amp; avoid_nodes) {
+        vector&lt;bool&gt; is_fixed(n, false);
+        vector&lt;T&gt; fixed_val(n, T(0));
+        vector&lt;T&gt; C(n, T(0));
+        for (ll t : targets) { is_fixed[t] = true; fixed_val[t] = T(1); }
+        for (ll a : avoid_nodes) { is_fixed[a] = true; fixed_val[a] = T(0); }
+        return solve(is_fixed, fixed_val, C);
+    }
+    
+    // DP: ゴール到達までに特定の頂点を訪問する期待回数
+    vector&lt;T&gt; expected_visits(const vector&lt;ll&gt;&amp; goals, ll target_node) {
+        vector&lt;bool&gt; is_fixed(n, false);
+        vector&lt;T&gt; fixed_val(n, T(0));
+        vector&lt;T&gt; C(n, T(0));
+        C[target_node] = T(1);
+        for (ll g_node : goals) { is_fixed[g_node] = true; }
+        return solve(is_fixed, fixed_val, C);
+    }
+};</code></pre>
+        </div>
+    </div>
+
+    <div
+        class="template-collection"
+        style="margin-top: 15px"
+    >
+        <h4
+            style="
+                margin-bottom: 5px;
+                font-size: 0.95em;
+                color: #555;
+            "
+        >
+            ▼ 使い方と応用パターン
+        </h4>
+        
+        <details class="snippet-details">
+            <summary>
+                メモ：原理と遷移確率の調整
+            </summary>
+            <div style="padding: 10px; font-size: 0.9em; line-height: 1.6; color: #333;">
+                <ul>
+                    <li><strong>遷移確率の調整 (重み付き辺):</strong> <code>add_edge(u, v, w)</code> とすることで、頂点から隣接点への遷移確率を $w$ に比例させることができます。第3引数を省略した場合は $w=1$ (等分布) になります。</li>
+                    <li><strong>高速クエリの原理:</strong> 辺 $e=(u, v)$ において $u \to v$ に向かうパスの期待値は、その辺で木を切断した際の $u$ 側の成分における全頂点の重み和 (次数和) に比例するという性質を用いています。これをダブリング (LCA) と組み合わせることで、クエリごとに $O(\log N)$ での計算を可能にしています。</li>
+                </ul>
+            </div>
+        </details>
+
+        <details class="snippet-details">
+            <summary>
+                【最速】任意の2点間クエリ (等分布/重み付き対応)
+            </summary>
+            <pre><code class="hljs language-c++">ll N = 5;
+TreeRandomWalk&lt;ld&gt; trw(N);
+trw.add_edge(0, 1);
+trw.add_edge(1, 2);
+trw.add_edge(1, 3);
+trw.add_edge(3, 4);
+
+// 事前構築: 時間計算量 O(N log N)
+trw.build_fast_query();
+
+ll Q = 3;
+// 各クエリ: 時間計算量 O(log N)
+cout &lt;&lt; trw.expected_steps_fast(0, 4) &lt;&lt; endl;
+cout &lt;&lt; trw.expected_steps_fast(2, 3) &lt;&lt; endl;
+cout &lt;&lt; trw.expected_steps_fast(4, 1) &lt;&lt; endl;
+</code></pre>
+        </details>
+
+        <details class="snippet-details">
+            <summary>
+                到達確率（modint を使用した重み付き遷移）
+            </summary>
+            <pre><code class="hljs language-c++">using mint = atcoder::modint998244353;
+ll N = 5;
+TreeRandomWalk&lt;mint&gt; trw(N);
+// 遷移確率を調整する例: 辺の重みを指定
+trw.add_edge(0, 1, 2); // この辺は2倍選ばれやすい
+trw.add_edge(1, 2, 1);
+trw.add_edge(1, 3, 3);
+trw.add_edge(3, 4, 1);
+
+// 頂点 4 に到達する確率を求める (頂点 0 に行ったら失敗とみなす)
+// 計算量: 時間 O(N)
+vector&lt;ll&gt; targets = {4};
+vector&lt;ll&gt; avoid = {0};
+vector&lt;mint&gt; P = trw.hit_probability(targets, avoid);
+
+cout &lt;&lt; "頂点2から出発して4に到達する確率: " &lt;&lt; P[2].val() &lt;&lt; endl;
+</code></pre>
+        </details>
+
+        <details class="snippet-details">
+            <summary>
+                【DP】複数ゴールへの到達期待歩数 / 訪問回数
+            </summary>
+            <pre><code class="hljs language-c++">ll N = 5;
+TreeRandomWalk&lt;ld&gt; trw(N);
+// ... 辺の追加 (重みあり/なし両対応) ...
+
+// ゴールが複数ある場合は期待値DPを利用します
+// 計算量: 時間 O(N)
+vector&lt;ll&gt; goals = {0, 4}; // ゴール
+vector&lt;ld&gt; E = trw.expected_steps(goals);
+cout &lt;&lt; "頂点2からの期待歩数: " &lt;&lt; E[2] &lt;&lt; endl;
+
+// 特定の頂点(例: 頂点3)を訪問する期待回数
+// 計算量: 時間 O(N)
+ll target = 3;
+vector&lt;ld&gt; V = trw.expected_visits(goals, target);
+cout &lt;&lt; "頂点1から出発時の頂点3への訪問回数: " &lt;&lt; V[1] &lt;&lt; endl;
+</code></pre>
+        </details>
+        
+        <details class="snippet-details">
+            <summary>
+                汎用ソルバーの応用 (カスタムスコアの計算)
+            </summary>
+            <pre><code class="hljs language-c++">ll N = 5;
+TreeRandomWalk&lt;ld&gt; trw(N);
+// ... 辺の追加 ...
+
+// ゴール到達までに、頂点ごとのスコア W[u] の総和の期待値を求める場合
+vector&lt;ld&gt; W = {10, 20, 30, 40, 50};
+
+vector&lt;bool&gt; is_fixed(N, false);
+vector&lt;ld&gt; fixed_val(N, (ld)0);
+vector&lt;ld&gt; C(N, (ld)0);
+
+for(ll i = 0; i &lt; N; i++) {
+    C[i] = W[i]; // その頂点に滞在するたびにスコアを加算
+}
+is_fixed[4] = true; // 頂点4をゴールとする
+fixed_val[4] = 0;
+
+// 計算量: 時間 O(N)
+vector&lt;ld&gt; ans = trw.solve(is_fixed, fixed_val, C);
+</code></pre>
+        </details>
+    </div>
+</div>
 
 
                 </section>
@@ -18307,6 +18670,11 @@ cout &lt;&lt; ans.val() &lt;&lt; endl; // 出力: 6 (0-1の選び方3通り × 1
                                     >グリッド一筆書き ＆ 最大マッチング構築</a
                                 >
                             </li>
+                            <li>
+                                <a href="#obstacle-dp"
+                                    >障害物回避DP</a
+                                >
+                            </li>
                         </ul>
                     </nav>
 
@@ -20685,7 +21053,140 @@ auto [r2, c2] = table2[1][0]; // {2, 0} が返る</code></pre>
     </details>
 </div>
 </div>
-                    
+                   
+<div class="function-note" id="obstacle-dp">
+                        <div class="function-header">
+                            <h3 class="function-name">障害物回避DP (First-Hit DP)</h3>
+                            <p class="function-purpose">
+                                <span class="label">用途:</span>
+                                $H\times W$ の巨大グリッドにおいて、$K$ 個の障害物を回避して左上から右下へ到達する経路数の計算（包除原理）
+                            </p>
+                        </div>
+                        <p>
+                            <strong>計算量:</strong> O(K<sup>2</sup>) （K は障害物の数）。
+                            事前に O(H+W) など最大移動ステップ分の階乗前計算（<code>init_nCr</code>等）が完了していることが前提。
+                        </p>
+
+                        <div
+                            class="code-block"
+                            data-custom-lines="true"
+                            aria-label="Code block"
+                        >
+                            <div class="code-toolbar">
+                                <span class="lang-label" aria-hidden="true"
+                                    >C++</span
+                                >
+                                <button
+                                    class="copy-btn"
+                                    type="button"
+                                    aria-label="Copy code"
+                                >
+                                    Copy
+                                </button>
+                            </div>
+                            <div class="code-wrap">
+                                <pre><code class="hljs language-c++" spellcheck="false">// 前提：階乗および組み合わせの mod 計算 (init_nCr, nCr) が定義・初期化されていること
+using ll = long long;
+
+struct Point {
+    ll r, c;
+    bool operator&lt;(const Point&amp; other) const {
+        if (r != other.r) return r &lt; other.r;
+        return c &lt; other.c;
+    }
+};
+
+// 2点間の経路数 (障害物無視)
+ll count_paths(Point from, Point to, long long mod) {
+    if (from.r &gt; to.r || from.c &gt; to.c) return 0;
+    ll dr = to.r - from.r;
+    ll dc = to.c - from.c;
+    return nCr(dr + dc, dr, mod);
+}
+
+// 障害物回避DPのメイン処理
+// start: スタート座標, goal: ゴール座標, obstacles: 障害物リスト
+ll obstacle_avoidance_dp(Point start, Point goal, vector&lt;Point&gt; obstacles, long long mod) {
+    // 障害物を座標順 (行 -&gt; 列) にソート
+    sort(obstacles.begin(), obstacles.end());
+
+    // ゴールを最終目的地として障害物リストの最後に追加
+    obstacles.push_back(goal);
+    int K = obstacles.size();
+
+    // dp[i]: 他の障害物を一切踏まずに、初めて障害物 i に到達する経路数
+    vector&lt;long long&gt; dp(K, 0);
+
+    for (int i = 0; i &lt; K; i++) {
+        // スタートから障害物 i への全経路数
+        dp[i] = count_paths(start, obstacles[i], mod);
+
+        // 途中で他の障害物 j にぶつかった場合を引く (包除原理)
+        for (int j = 0; j &lt; i; j++) {
+            // j から i へ到達可能か判定 (ソート済みなので r_j &lt;= r_i は保証。列のみ確認)
+            if (obstacles[j].c &lt;= obstacles[i].c) {
+                long long invalid_paths = dp[j] * count_paths(obstacles[j], obstacles[i], mod) % mod;
+                dp[i] = (dp[i] - invalid_paths + mod) % mod;
+            }
+        }
+    }
+
+    // ゴール (K-1番目) への合法な経路数が答え
+    return dp[K - 1];
+}</code></pre>
+                            </div>
+                        </div>
+
+                        <div
+                            class="template-collection"
+                            style="margin-top: 15px"
+                        >
+                            <h4
+                                style="
+                                    margin-bottom: 5px;
+                                    font-size: 0.95em;
+                                    color: #555;
+                                "
+                            >
+                                ▼ 使い方と応用パターン
+                            </h4>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    基本の使い方（巨大なグリッドでの経路探索）
+                                </summary>
+                                <pre><code class="hljs language-c++">int main() {
+    long long mod = 1000000007;
+    
+    // 1. 盤面サイズ H=10^9, W=10^9 のような巨大グリッドを想定
+    // 最大移動回数は H+W なので、それ以上の余裕を持たせて前計算
+    // ※ H+W が 10^9 以上の場合は nCr を都度計算する等工夫が必要。
+    // ※ ここでは H+W &lt; 200000 程度の問題か、十分なメモリがある前提。
+    init_nCr(200005, mod);
+
+    Point start = {0, 0};
+    Point goal = {100000, 100000};
+    
+    // 障害物の座標 (少数を想定)
+    vector&lt;Point&gt; obstacles = {
+        {10, 20},
+        {500, 600},
+        {80000, 90000}
+    };
+
+    long long ans = obstacle_avoidance_dp(start, goal, obstacles, mod);
+    cout &lt;&lt; "有効な経路数: " &lt;&lt; ans &lt;&lt; endl;
+
+    return 0;
+}</code></pre>
+                            </details>
+                        </div>
+                        <p>
+                            <strong>注意:</strong>
+                            この手法は、障害物の数 $K$ が $K \le 3000$ 程度であれば高速に動作しますが、グリッド全体の移動回数（$r + c$）に基づく組み合わせ計算 <code>nCr</code> が定数時間で返ってくることが前提です。もし $H, W$ が大きすぎて <code>fact</code> の前計算配列がメモリ制限に引っかかる場合は、階乗前計算の代わりに $O(R)$ かかる乗算で <code>nCr</code> を都度計算する等の調整が必要です。
+                        </p>
+                    </div>
+
                 </section>
 
                 <section id="sec-dp" class="article-section">
@@ -20703,6 +21204,8 @@ auto [r2, c2] = table2[1][0]; // {2, 0} が返る</code></pre>
                             <li><a href="#dp-lis">LIS</a></li>
                             <li><a href="#dp-weighted-lis">重み付きLIS</a></li>
                             <li><a href="#dp-2d-lis">2次元LIS</a></li>
+                            <li><a href="#knapsack-collection">ナップサック問題</a></li>
+                            <li><a href="#subset-sum-collection ">部分和問題</a></li>
                         </ul>
                     </nav>
 
@@ -21393,7 +21896,891 @@ ll ans = dp.size();</code></pre>
                         </p>
                     </div>
 
+<!-- ナップサック問題まとめ -->
+<div class="function-note" id="knapsack-collection">
+    <div class="function-header">
+        <h3 class="function-name">ナップサック問題 (基本構造と派生形)</h3>
+        <p class="function-purpose">
+            <span class="label">用途:</span>
+            容量制限がある中での価値の最大化（アイテムごとに重さと価値が存在する問題）を解く
+        </p>
+    </div>
+    <p>
+        <strong>計算量:</strong> 基本の重さDPは O(NW)、価値DPは O(NV)。<br>
+        制約（Wが大きいか、Vの合計が大きいか）に応じた基本の使い分けに加え、同じ品物を選ぶ条件（個数制限あり/なし）に応じたカスタマイズコードを適用します。
+    </p>
 
+    <!-- 【基本構造】0-1ナップサック -->
+    <div
+        class="code-block"
+        data-custom-lines="true"
+        aria-label="Code block"
+    >
+        <div class="code-toolbar">
+            <span class="lang-label" aria-hidden="true">C++</span>
+            <button
+                class="copy-btn"
+                type="button"
+                aria-label="Copy code"
+            >
+                Copy
+            </button>
+        </div>
+        <div class="code-wrap">
+            <pre><code class="hljs language-c++" spellcheck="false">// 【基本構造】0-1ナップサック問題
+
+// 1. 重さDP (Wが小さい場合: W &lt;= 10^5 程度)
+// dp[i] : 重さの合計が i 以下のときの価値の最大値
+ll knapsack_weight_dp(const vector&lt;ll&gt;&amp; weights, const vector&lt;ll&gt;&amp; values, ll W) {
+    int n = weights.size();
+    vector&lt;ll&gt; dp(W + 1, 0);
+    for (int i = 0; i &lt; n; ++i) {
+        // 重さが大きい方から更新する（同じ品物を複数回選ばないため）
+        for (ll w = W; w &gt;= weights[i]; --w) {
+            dp[w] = max(dp[w], dp[w - weights[i]] + values[i]);
+        }
+    }
+    return dp[W];
+}
+
+// 2. 価値DP (Vの合計が小さい場合: sum(V) &lt;= 10^5 程度)
+// dp[i] : 価値の合計が i のときの重さの最小値
+ll knapsack_value_dp(const vector&lt;ll&gt;&amp; weights, const vector&lt;ll&gt;&amp; values, ll W) {
+    int n = weights.size();
+    ll max_v_sum = 0;
+    for (ll v : values) max_v_sum += v;
+
+    const ll INF = 1e18; // 十分大きい値
+    vector&lt;ll&gt; dp(max_v_sum + 1, INF);
+    dp[0] = 0;
+
+    for (int i = 0; i &lt; n; ++i) {
+        for (ll v = max_v_sum; v &gt;= values[i]; --v) {
+            if (dp[v - values[i]] != INF) {
+                dp[v] = min(dp[v], dp[v - values[i]] + weights[i]);
+            }
+        }
+    }
+
+    ll res = 0;
+    for (ll v = 0; v &lt;= max_v_sum; ++v) {
+        if (dp[v] &lt;= W) res = max(res, v);
+    }
+    return res;
+}</code></pre>
+        </div>
+    </div>
+
+    <!-- 使い方と派生コードの集約 -->
+    <div class="template-collection" style="margin-top: 15px">
+        <h4 style="margin-bottom: 5px; font-size: 0.95em; color: #555;">
+            ▼ 使い方と応用パターン（カスタマイズ実装）
+        </h4>
+
+        <details class="snippet-details">
+            <summary>
+                基本の使い方 (0-1ナップサック 重さDP / 価値DP)
+            </summary>
+            <pre><code class="hljs language-c++">// 【重さDP の使い方】容量 W が小さい場合の基本
+ll N = 4;
+ll W = 10; 
+vector&lt;ll&gt; weights = {2, 1, 3, 2};
+vector&lt;ll&gt; values = {3, 2, 4, 2};
+
+ll ans1 = knapsack_weight_dp(weights, values, W);
+cout &lt;&lt; "最大価値 (重さDP): " &lt;&lt; ans1 &lt;&lt; endl;
+
+// 【価値DP の使い方】重さ W_i が大きく、価値 V_i が小さい場合
+ll W_large = 1000000000; 
+vector&lt;ll&gt; weights_large = {200000000, 100000000, 300000000, 200000000};
+// 価値は上の values を流用
+
+ll ans2 = knapsack_value_dp(weights_large, values, W_large);
+cout &lt;&lt; "最大価値 (価値DP): " &lt;&lt; ans2 &lt;&lt; endl;</code></pre>
+        </details>
+
+        <details class="snippet-details">
+            <summary>
+                【派生】個数制限付きナップサック (Bounded Knapsack) の実装と使い方
+            </summary>
+            <pre><code class="hljs language-c++">// 各品物に「最大K個まで」という個数制限がある場合 (O(NW log K))
+// 2のべき乗に分割し、0-1ナップサックに帰着させるカスタマイズ
+ll bounded_knapsack(const vector&lt;ll&gt;&amp; weights, const vector&lt;ll&gt;&amp; values, const vector&lt;ll&gt;&amp; counts, ll W) {
+    vector&lt;ll&gt; w_01, v_01;
+    int n = weights.size();
+    
+    // 品物を2のべき乗個に分割
+    for (int i = 0; i &lt; n; ++i) {
+        ll rem = counts[i];
+        for (ll k = 1; rem &gt; 0; k &lt;&lt;= 1) {
+            ll take = min(k, rem);
+            w_01.push_back(weights[i] * take);
+            v_01.push_back(values[i] * take);
+            rem -= take;
+        }
+    }
+
+    // 分割した品物で通常の重さDP（0-1 ナップサック）を実行
+    vector&lt;ll&gt; dp(W + 1, 0);
+    for (size_t i = 0; i &lt; w_01.size(); ++i) {
+        for (ll w = W; w &gt;= w_01[i]; --w) {
+            dp[w] = max(dp[w], dp[w - w_01[i]] + v_01[i]);
+        }
+    }
+    return dp[W];
+}
+
+// ----------------------
+// 使い方
+// ----------------------
+/*
+ll W = 10;
+vector&lt;ll&gt; weights = {3, 4, 2};
+vector&lt;ll&gt; values = {4, 5, 3};
+vector&lt;ll&gt; counts = {2, 1, 3}; // 選べる上限個数
+
+ll ans = bounded_knapsack(weights, values, counts, W);
+cout &lt;&lt; "最大価値 (個数制限あり): " &lt;&lt; ans &lt;&lt; endl; 
+*/</code></pre>
+        </details>
+
+        <details class="snippet-details">
+            <summary>
+                【派生】個数制限なしナップサック (Unbounded Knapsack) の実装と使い方
+            </summary>
+            <pre><code class="hljs language-c++">// 各品物を「何個でも」選んでよい場合 (O(NW))
+// DPの遷移（ループ方向）を逆にして複数回選択を許容するカスタマイズ
+ll unbounded_knapsack(const vector&lt;ll&gt;&amp; weights, const vector&lt;ll&gt;&amp; values, ll W) {
+    int n = weights.size();
+    vector&lt;ll&gt; dp(W + 1, 0);
+    
+    for (int i = 0; i &lt; n; ++i) {
+        // 0-1ナップサックとは異なり、「前から」更新する
+        for (ll w = weights[i]; w &lt;= W; ++w) {
+            dp[w] = max(dp[w], dp[w - weights[i]] + values[i]);
+        }
+    }
+    return dp[W];
+}
+
+// ----------------------
+// 使い方
+// ----------------------
+/*
+ll W = 10;
+vector&lt;ll&gt; weights = {3, 4, 2};
+vector&lt;ll&gt; values = {4, 5, 3};
+
+ll ans = unbounded_knapsack(weights, values, W);
+cout &lt;&lt; "最大価値 (制限なし): " &lt;&lt; ans &lt;&lt; endl; 
+*/</code></pre>
+        </details>
+<details class="snippet-details">
+            <summary>
+                【派生】選ぶ品数が K 個「以下」のナップサック問題
+            </summary>
+            <pre><code class="hljs language-c++">// 使う品数を K 個「以下」に制限したナップサック問題 (O(NKW))
+// dp[k][w] : ちょうど k 個選んで重さ合計が w のときの価値の最大値
+ll knapsack_at_most_k_items(const vector&lt;ll&gt;&amp; weights, const vector&lt;ll&gt;&amp; values, ll W, int K) {
+    int n = weights.size();
+    const ll MIN_INF = -1e18; // 到達不可能な状態
+    // 2次元DP配列 (K+1 x W+1)
+    vector&lt;vector&lt;ll&gt;&gt; dp(K + 1, vector&lt;ll&gt;(W + 1, MIN_INF));
+    dp[0][0] = 0;
+
+    for (int i = 0; i &lt; n; ++i) {
+        // 同じ品物を複数回使わないため、個数(k)も重さ(w)も後ろから更新
+        for (int k = K; k &gt;= 1; --k) {
+            for (ll w = W; w &gt;= weights[i]; --w) {
+                if (dp[k - 1][w - weights[i]] != MIN_INF) {
+                    dp[k][w] = max(dp[k][w], dp[k - 1][w - weights[i]] + values[i]);
+                }
+            }
+        }
+    }
+
+    ll max_val = 0; // 0個選ぶ場合（価値0）が保証されるため初期値は0
+    // 0個からK個までのすべての状態から最大値を探索
+    for (int k = 0; k &lt;= K; ++k) {
+        for (ll w = 0; w &lt;= W; ++w) {
+            max_val = max(max_val, dp[k][w]);
+        }
+    }
+    return max_val;
+}</code></pre>
+        </details>
+
+        <details class="snippet-details">
+            <summary>
+                【派生】選ぶ品数が「ちょうど」 K 個のナップサック問題
+            </summary>
+            <pre><code class="hljs language-c++">// 使う品数を「ちょうど」 K 個に制限したナップサック問題 (O(NKW))
+// 状態遷移の構造は「K個以下」と同様ですが、最終的な集計対象が限定されます
+ll knapsack_exact_k_items(const vector&lt;ll&gt;&amp; weights, const vector&lt;ll&gt;&amp; values, ll W, int K) {
+    int n = weights.size();
+    const ll MIN_INF = -1e18;
+    vector&lt;vector&lt;ll&gt;&gt; dp(K + 1, vector&lt;ll&gt;(W + 1, MIN_INF));
+    dp[0][0] = 0;
+
+    for (int i = 0; i &lt; n; ++i) {
+        for (int k = K; k &gt;= 1; --k) {
+            for (ll w = W; w &gt;= weights[i]; --w) {
+                if (dp[k - 1][w - weights[i]] != MIN_INF) {
+                    dp[k][w] = max(dp[k][w], dp[k - 1][w - weights[i]] + values[i]);
+                }
+            }
+        }
+    }
+
+    ll max_val = MIN_INF;
+    // ちょうど K 個選んだ状態 (dp[K][*]) のみから最大値を探索
+    for (ll w = 0; w &lt;= W; ++w) {
+        max_val = max(max_val, dp[K][w]);
+    }
+    
+    // ちょうどK個選んで重さW以下に収める方法が存在しない場合は -1 などを返す
+    return (max_val == MIN_INF) ? -1 : max_val;
+}</code></pre>
+        </details>
+
+<details class="snippet-details">
+            <summary>
+                【派生】重みが超増加数列の場合 (O(N))
+            </summary>
+            <pre><code class="hljs language-c++">// 重みが超増加数列（w[i] &gt; w[0] + ... + w[i-1]）を満たすナップサック問題
+// 重さ順にソート済み（昇順）であることを前提とします。
+// 価値（V）が任意に設定されていても、O(N) で厳密解を求めることができます。
+ll knapsack_superincreasing(const vector&lt;ll&gt;&amp; weights, const vector&lt;ll&gt;&amp; values, ll W) {
+    int n = weights.size();
+    if (n == 0) return 0;
+
+    // 価値の累積和を前計算（i-1 番目以下を「すべて選んだ」ときの価値を O(1) で出すため）
+    vector&lt;ll&gt; pref_v(n, 0);
+    pref_v[0] = values[0];
+    for (int i = 1; i &lt; n; ++i) {
+        pref_v[i] = pref_v[i - 1] + values[i];
+    }
+
+    // 再帰的に後ろ（重い方）から評価する
+    auto dfs = [&amp;](auto self, int i, ll r) -&gt; ll {
+        if (i &lt; 0) return 0;
+        
+        // 荷物 i が容量オーバーで入らない場合は、選ばない一択
+        if (r &lt; weights[i]) {
+            return self(self, i - 1, r);
+        }
+        
+        // 【荷物 i が入る場合】
+        // 1. i を「選ばない」場合
+        // 超増加数列の性質より r &gt;= weights[i] &gt; (0番目〜i-1番目の重さの総和) となるため、
+        // i-1番目以下の荷物を「すべて」入れることができる。
+        ll not_pick = (i &gt; 0) ? pref_v[i - 1] : 0;
+        
+        // 2. i を「選ぶ」場合
+        ll pick = values[i] + self(self, i - 1, r - weights[i]);
+        
+        return max(not_pick, pick);
+    };
+
+    return dfs(dfs, n - 1, W);
+}</code></pre>
+        </details>
+
+<details class="snippet-details">
+            <summary>
+                【派生】半分全列挙 / Meet in the middle (O(2^(N/2) N))
+            </summary>
+            <pre><code class="hljs language-c++">// N <= 40 程度で、重さ W も価値 V も巨大な場合の 0-1 ナップサック。
+// 全体を半分に分け、それぞれの部分集合の全探索結果を二分探索で結合する。
+ll knapsack_meet_in_the_middle(const vector<ll>& weights, const vector<ll>& values, ll W) {
+    int n = weights.size();
+    int n1 = n / 2;
+    int n2 = n - n1;
+
+    // 1. 前半の全列挙 (最大 2^20 通り)
+    vector<pair<ll, ll>> half1;
+    for (int bit = 0; bit < (1 << n1); ++bit) {
+        ll w = 0, v = 0;
+        for (int i = 0; i < n1; ++i) {
+            if ((bit >> i) & 1) { w += weights[i]; v += values[i]; }
+        }
+        half1.push_back({w, v});
+    }
+
+    // 2. 後半の全列挙 (最大 2^20 通り)
+    vector<pair<ll, ll>> half2;
+    for (int bit = 0; bit < (1 << n2); ++bit) {
+        ll w = 0, v = 0;
+        for (int i = 0; i < n2; ++i) {
+            if ((bit >> i) & 1) { w += weights[n1 + i]; v += values[n1 + i]; }
+        }
+        half2.push_back({w, v});
+    }
+
+    // 3. 後半を重さでソートし、「重いのに価値が低い」無駄な状態を排除して単調増加にする
+    sort(half2.begin(), half2.end());
+    vector<pair<ll, ll>> filtered_half2;
+    ll max_v = -1;
+    for (auto p : half2) {
+        if (max_v < p.second) {
+            filtered_half2.push_back(p);
+            max_v = p.second;
+        }
+    }
+
+    // 4. 前半の各状態に対して、残りの容量で最適な後半の状態を二分探索
+    ll ans = 0;
+    for (auto p : half1) {
+        ll w1 = p.first;
+        ll v1 = p.second;
+        if (w1 > W) continue;
+
+        ll rem_w = W - w1;
+        // rem_w 以下の最大の重さを持つ要素を検索
+        auto it = upper_bound(filtered_half2.begin(), filtered_half2.end(), make_pair(rem_w, (ll)2e18));
+        if (it != filtered_half2.begin()) {
+            --it; // 条件を満たす最大の要素
+            ans = max(ans, v1 + it->second);
+        }
+    }
+    return ans;
+}</code></pre>
+        </details>
+
+<details class="snippet-details">
+            <summary>
+                【派生】重みの種類が少ない場合の 半分全列挙 / Meet in the middle
+            </summary>
+            <pre><code class="hljs language-c++">// 重みの種類数 K が少ない（4〜6種類程度）が、全体の個数 N や容量 W が大きく、
+// DP が使えない場合に非常に有効なアルゴリズム。
+// 同じ重さのアイテムを価値降順で累積和を取り、種類を半分に分けて全列挙し、二分探索で結合します。
+
+// w : 各種類の重さ (サイズ K)
+// v : 各種類のアイテムの価値リスト (サイズ K、v[i] は種類 i のアイテムの価値配列)
+ll knapsack_few_weights_mitm(const vector<ll>& w, vector<vector<ll>>& v, ll W) {
+    int K = w.size();
+    if (K == 0) return 0;
+
+    // 1. 各種類ごとに価値を降順ソートし、累積和を計算
+    vector<vector<ll>> pref_v(K);
+    for (int i = 0; i < K; ++i) {
+        sort(v[i].rbegin(), v[i].rend());
+        pref_v[i].assign(v[i].size() + 1, 0);
+        for (size_t j = 0; j < v[i].size(); ++j) {
+            pref_v[i][j + 1] = pref_v[i][j] + v[i][j];
+        }
+    }
+
+    // 状態を列挙する再帰関数 (DFS)
+    auto dfs = [&](auto self, int idx, int end_idx, ll current_w, ll current_v, vector<pair<ll, ll>>& res) -> void {
+        if (idx == end_idx) {
+            res.push_back({current_w, current_v});
+            return;
+        }
+        // 種類 idx を j 個選ぶ場合を全て試す
+        for (size_t j = 0; j < pref_v[idx].size(); ++j) {
+            if (current_w + w[idx] * j > W) break; // 容量オーバーなら枝刈り
+            self(self, idx + 1, end_idx, current_w + w[idx] * j, current_v + pref_v[idx][j], res);
+        }
+    };
+
+    // 2. 前半と後半に分けて状態を全列挙
+    int mid = K / 2;
+    vector<pair<ll, ll>> half1, half2;
+    dfs(dfs, 0, mid, 0, 0, half1);
+    dfs(dfs, mid, K, 0, 0, half2);
+
+    // 3. 後半を重さで昇順ソートし、「重いのに価値が低い」無駄な状態を排除 (パレート最適)
+    sort(half2.begin(), half2.end());
+    vector<pair<ll, ll>> filtered_half2;
+    ll max_v = -1;
+    for (auto& p : half2) {
+        if (max_v < p.second) {
+            filtered_half2.push_back(p);
+            max_v = p.second;
+        }
+    }
+
+    // 4. 前半の各状態に対して、残りの容量で最適な後半の状態を二分探索
+    ll ans = 0;
+    for (auto& p : half1) {
+        ll w1 = p.first;
+        ll v1 = p.second;
+        if (w1 > W) continue;
+
+        ll rem_w = W - w1;
+        // rem_w 以下の最大の重さを持つ要素を検索
+        auto it = upper_bound(filtered_half2.begin(), filtered_half2.end(), make_pair(rem_w, (ll)3e18));
+        if (it != filtered_half2.begin()) {
+            --it; // 条件を満たす最大の要素
+            ans = max(ans, v1 + it->second);
+        }
+    }
+    return ans;
+}</code></pre>
+        </details>
+
+        <details class="snippet-details">
+            <summary>
+                【派生】重みの幅が非常に狭い場合 (C &lt;= w_i &lt;= C + D)
+            </summary>
+            <pre><code class="hljs language-c++">// すべての重さが C ≦ w_i ≦ C + D (Dは5など非常に小さい) の場合。 (O(N^3 D))
+// 「選んだ個数 k」と「基準値 C からのはみ出した重さの合計 s」を状態に持ちます。
+// 重さが 10^9 のように巨大で、かつ DP が使えない場合に有効です。
+ll knapsack_narrow_weight_range(const vector&lt;ll&gt;&amp; weights, const vector&lt;ll&gt;&amp; values, ll W) {
+    int n = weights.size();
+    if (n == 0) return 0;
+    
+    ll C = *min_element(weights.begin(), weights.end());
+    ll max_w = *max_element(weights.begin(), weights.end());
+    ll D = max_w - C; // 重みの幅 (例: 5 程度を想定)
+    
+    // dp[k][s] : ちょうど k 個選んで、(重さの合計 - k*C) が s となるときの最大価値
+    int max_s = n * D;
+    const ll MIN_INF = -1e18;
+    vector&lt;vector&lt;ll&gt;&gt; dp(n + 1, vector&lt;ll&gt;(max_s + 1, MIN_INF));
+    dp[0][0] = 0;
+    
+    for (int i = 0; i &lt; n; ++i) {
+        ll d = weights[i] - C; // はみ出した重さ (0 〜 D)
+        // 同じものを複数回選ばないよう、k も s も後ろから更新
+        for (int k = i; k &gt;= 0; --k) {
+            for (int s = max_s; s &gt;= d; --s) {
+                if (dp[k][s - d] != MIN_INF) {
+                    dp[k + 1][s] = max(dp[k + 1][s], dp[k][s - d] + values[i]);
+                }
+            }
+        }
+    }
+    
+    ll ans = 0;
+    for (int k = 0; k &lt;= n; ++k) {
+        for (int s = 0; s &lt;= max_s; ++s) {
+            if (dp[k][s] != MIN_INF) {
+                ll total_weight = (ll)k * C + s;
+                if (total_weight &lt;= W) {
+                    ans = max(ans, dp[k][s]);
+                }
+            }
+        }
+    }
+    return ans;
+}
+
+// ----------------------
+// 使い方
+// ----------------------
+/*
+ll W = 3000000008; // 巨大な容量
+vector&lt;ll&gt; weights = {1000000000, 1000000002, 1000000005, 1000000003}; // 幅 D = 5
+vector&lt;ll&gt; values = {10, 15, 25, 20};
+
+ll ans = knapsack_narrow_weight_range(weights, values, W);
+cout &lt;&lt; "最大価値 (幅が狭い): " &lt;&lt; ans &lt;&lt; endl;
+*/</code></pre>
+        </details>
+
+        
+<details class="snippet-details">
+            <summary>
+                【派生】Wが極めて大きい個数制限なしナップサック (鳩の巣原理による微調整)
+            </summary>
+            <pre><code class="hljs language-c++">// W が巨大 (例: 10^18) だが、重さの最大値 w_max が小さい (例: 1000 以下) 場合 (O(N log N + N * w_max^2))
+// 鳩の巣原理により、大半の容量をコスパ最強の品物で貪欲に埋め、残り (w_max^2 程度) をDPで微調整します。
+ll unbounded_knapsack_huge_w(const vector&lt;ll&gt;&amp; weights, const vector&lt;ll&gt;&amp; values, ll W) {
+    int n = weights.size();
+    if (n == 0) return 0;
+
+    ll max_w = 0;
+    int best_idx = 0;
+    for (int i = 0; i &lt; n; ++i) {
+        max_w = max(max_w, weights[i]);
+        // コスパ比較 (割り算の誤差を避けるため乗算で比較): v[i]/w[i] &gt; v[best]/w[best]
+        ll lhs = values[i] * weights[best_idx];
+        ll rhs = values[best_idx] * weights[i];
+        if (lhs &gt; rhs || (lhs == rhs &amp;&amp; weights[i] &lt; weights[best_idx])) {
+            best_idx = i; // コスパが同じなら重さが小さい方を優先
+        }
+    }
+
+    // 鳩の巣原理に基づく微調整の上限 (w_max * w_max)
+    ll threshold = max_w * max_w;
+    ll base_val = 0;
+    ll rem_w = W;
+
+    // 容量 W が閾値より十分大きい場合、W - threshold 分をコスパ最強品物で埋める
+    if (W &gt; threshold) {
+        ll take_cnt = (W - threshold) / weights[best_idx];
+        base_val = take_cnt * values[best_idx];
+        rem_w = W - take_cnt * weights[best_idx];
+    }
+
+    // 残りの容量 rem_w (最大でも threshold + w_max 程度) で通常の個数制限なしDP
+    vector&lt;ll&gt; dp(rem_w + 1, 0);
+    for (int i = 0; i &lt; n; ++i) {
+        for (ll w = weights[i]; w &lt;= rem_w; ++w) {
+            dp[w] = max(dp[w], dp[w - weights[i]] + values[i]);
+        }
+    }
+
+    return base_val + dp[rem_w];
+}
+
+// ----------------------
+// 使い方
+// ----------------------
+/*
+ll W = 1000000000000000000LL; // 10^18
+vector&lt;ll&gt; weights = {400, 500, 300}; // w_max = 500
+vector&lt;ll&gt; values = {401, 500, 299};
+
+ll ans = unbounded_knapsack_huge_w(weights, values, W);
+cout &lt;&lt; "最大価値 (W巨大): " &lt;&lt; ans &lt;&lt; endl;
+*/</code></pre>
+        </details>
+
+        <details class="snippet-details">
+            <summary>
+                【派生】重みが倍数制約を満たす個数制限なしナップサック (完全貪欲法)
+            </summary>
+            <pre><code class="hljs language-c++">// 品物の重さが「w_1 は w_2 の約数、w_2 は w_3 の約数…」という倍数関係にある場合 (O(N log N))
+// DPすら不要で、コスパ（価値 / 重さ）順の貪欲法が常に数学的な最適解になります。
+// （※ここでは何個でも選べる「個数制限なし」を前提としています）
+
+struct DivisibleItem { ll w, v; };
+
+ll knapsack_divisible(const vector&lt;ll&gt;&amp; weights, const vector&lt;ll&gt;&amp; values, ll W) {
+    int n = weights.size();
+    vector&lt;DivisibleItem&gt; items(n);
+    for (int i = 0; i &lt; n; ++i) {
+        items[i] = {weights[i], values[i]};
+    }
+
+    // コスパ（価値 / 重さ）の降順にソート
+    sort(items.begin(), items.end(), [](const DivisibleItem&amp; a, const DivisibleItem&amp; b) {
+        ll lhs = a.v * b.w;
+        ll rhs = b.v * a.w;
+        if (lhs != rhs) return lhs &gt; rhs;
+        return a.w &gt; b.w; // コスパが同じなら重さが大きい方を優先
+    });
+
+    ll ans = 0;
+    ll rem_w = W;
+
+    for (int i = 0; i &lt; n; ++i) {
+        if (rem_w == 0) break;
+        
+        // 入るだけ限界まで貪欲に選ぶ
+        ll take = rem_w / items[i].w;
+        ans += take * items[i].v;
+        rem_w -= take * items[i].w;
+    }
+
+    return ans;
+}
+
+// ----------------------
+// 使い方
+// ----------------------
+/*
+ll W = 100;
+// 重みが 1, 2, 4, 8... などの倍数関係を満たしていること
+vector&lt;ll&gt; weights = {1, 2, 4, 8};
+vector&lt;ll&gt; values = {2, 5, 9, 20};
+
+ll ans = knapsack_divisible(weights, values, W);
+cout &lt;&lt; "最大価値 (倍数制約): " &lt;&lt; ans &lt;&lt; endl;
+*/</code></pre>
+        </details>
+
+    </div>
+</div>
+
+<!-- 部分和問題まとめ -->
+<div class="function-note" id="subset-sum-collection">
+    <div class="function-header">
+        <h3 class="function-name">部分和問題 (基本と高速化)</h3>
+        <p class="function-purpose">
+            <span class="label">用途:</span>
+            与えられた数値の集合からいくつかを選び、目標の和（S）を作れるか判定する
+        </p>
+    </div>
+    <p>
+        <strong>計算量:</strong> 基本は O(NS)。<br>
+        【応用】要素の総和が S 程度に抑えられている場合は、種類数に注目したダブリング処理により O(S √S) に高速化可能。さらに <code>std::bitset</code> を用いることで O(S √S / 64) まで定数倍高速化できます。また、同じ要素の複数回使用を許可する場合のバリエーションも存在します。
+    </p>
+
+    <!-- 【基本構造】通常の部分和問題 -->
+    <div
+        class="code-block"
+        data-custom-lines="true"
+        aria-label="Code block"
+    >
+        <div class="code-toolbar">
+            <span class="lang-label" aria-hidden="true">C++</span>
+            <button
+                class="copy-btn"
+                type="button"
+                aria-label="Copy code"
+            >
+                Copy
+            </button>
+        </div>
+        <div class="code-wrap">
+            <pre><code class="hljs language-c++" spellcheck="false">// 【基本構造】通常の部分和問題 (O(NS))
+// dp[i] : 和 i を作れるかどうかの真偽値
+vector&lt;bool&gt; subset_sum_basic(const vector&lt;ll&gt;&amp; A, ll S) {
+    int n = A.size();
+    vector&lt;bool&gt; dp(S + 1, false);
+    dp[0] = true; // 0は何も選ばなければ作れる
+
+    for (int i = 0; i &lt; n; ++i) {
+        // 同じ要素を複数回選ばないよう、後ろから更新する
+        for (ll j = S; j &gt;= A[i]; --j) {
+            if (dp[j - A[i]]) {
+                dp[j] = true;
+            }
+        }
+    }
+    return dp;
+}</code></pre>
+        </div>
+    </div>
+
+    <!-- 使い方と派生コードの集約 -->
+    <div class="template-collection" style="margin-top: 15px">
+        <h4 style="margin-bottom: 5px; font-size: 0.95em; color: #555;">
+            ▼ 使い方と応用パターン（カスタマイズ実装）
+        </h4>
+
+        <details class="snippet-details">
+            <summary>
+                基本の使い方 (普通の部分和問題)
+            </summary>
+            <pre><code class="hljs language-c++">ll S = 10;
+vector&lt;ll&gt; A = {2, 3, 7};
+
+// DPテーブルを取得
+vector&lt;bool&gt; dp = subset_sum_basic(A, S);
+
+if (dp[S]) {
+    cout &lt;&lt; S &lt;&lt; " は作れます！" &lt;&lt; endl;
+} else {
+    cout &lt;&lt; S &lt;&lt; " は作れません。" &lt;&lt; endl;
+}</code></pre>
+        </details>
+
+<details class="snippet-details">
+            <summary>
+                【応用】通常の部分和問題の bitset による高速化 (O(NS / 64))
+            </summary>
+            <pre><code class="hljs language-c++">// 通常の部分和問題を std::bitset で定数倍高速化するテンプレート
+// ※和の最大値 MAX_S がコンパイル時に定数として決まっている必要があります。
+template&lt;size_t MAX_S&gt;
+bitset&lt;MAX_S&gt; subset_sum_bitset(const vector&lt;ll&gt;&amp; A) {
+    bitset&lt;MAX_S&gt; dp;
+    dp[0] = 1; // 0は何も選ばなければ作れる
+
+    for (ll a : A) {
+        // 現在作れる和の集合を a だけずらして（足して）統合する
+        dp |= (dp &lt;&lt; a);
+    }
+    return dp;
+}
+
+// ----------------------
+// 使い方
+// ----------------------
+/*
+const int MAX_S = 100005;
+vector&lt;ll&gt; A = {2, 3, 7};
+
+// DP状態（bitset）を取得
+bitset&lt;MAX_S&gt; dp = subset_sum_bitset&lt;MAX_S&gt;(A);
+
+ll target = 10;
+if (target &lt; MAX_S &amp;&amp; dp[target]) {
+    cout &lt;&lt; target &lt;&lt; " は作れます！" &lt;&lt; endl;
+} else {
+    cout &lt;&lt; target &lt;&lt; " は作れません。" &lt;&lt; endl;
+}
+*/</code></pre>
+        </details>
+
+        <details class="snippet-details">
+            <summary>
+                【応用】個数制限なし部分和問題 (同じ要素を何度でも使える)
+            </summary>
+            <pre><code class="hljs language-c++">// 各要素を何個でも選べる部分和問題 (O(NS))
+vector&lt;bool&gt; subset_sum_unbounded(const vector&lt;ll&gt;&amp; A, ll S) {
+    int n = A.size();
+    vector&lt;bool&gt; dp(S + 1, false);
+    dp[0] = true;
+
+    for (int i = 0; i &lt; n; ++i) {
+        // 同じ要素を何度でも選べるよう、前から（昇順に）更新する
+        for (ll j = A[i]; j &lt;= S; ++j) {
+            if (dp[j - A[i]]) {
+                dp[j] = true;
+            }
+        }
+    }
+    return dp;
+}</code></pre>
+        </details>
+
+        <details class="snippet-details">
+            <summary>
+                【応用】個数制限あり部分和問題 (各要素に使える上限回数がある)
+            </summary>
+            <pre><code class="hljs language-c++">// 各要素 a が m 個まで選べる部分和問題 (O(NS))
+// A : 要素の値の配列、M : 各要素の使える上限個数の配列
+vector&lt;bool&gt; subset_sum_bounded(const vector&lt;ll&gt;&amp; A, const vector&lt;ll&gt;&amp; M, ll S) {
+    int n = A.size();
+    vector&lt;bool&gt; dp(S + 1, false);
+    dp[0] = true;
+
+    for (int i = 0; i &lt; n; ++i) {
+        // 現在の要素 i を使った個数を記録する配列
+        vector&lt;ll&gt; count(S + 1, 0);
+        
+        for (ll j = A[i]; j &lt;= S; ++j) {
+            // j がまだ作れておらず、j - A[i] が作れていて、かつ要素 i の使用回数が M[i] 未満なら使う
+            if (!dp[j] &amp;&amp; dp[j - A[i]] &amp;&amp; count[j - A[i]] &lt; M[i]) {
+                dp[j] = true;
+                count[j] = count[j - A[i]] + 1;
+            }
+        }
+    }
+    return dp;
+}</code></pre>
+        </details>
+        
+<details class="snippet-details">
+            <summary>
+                【応用】選ぶ要素数が K 個「以下」の部分和問題
+            </summary>
+            <pre><code class="hljs language-c++">// 使う要素数を K 個「以下」に制限した部分和問題 (O(NS))
+// 真偽値ではなく「和 i を作るために必要な最小の要素数」を DP で管理する
+bool subset_sum_max_k_items(const vector&lt;ll&gt;&amp; A, ll S, ll K) {
+    const ll INF = 1e18;
+    vector&lt;ll&gt; dp(S + 1, INF);
+    dp[0] = 0; // 0を作るための要素数は0
+
+    for (ll a : A) {
+        // 同じ要素を複数回使わないため後ろから更新
+        for (ll j = S; j &gt;= a; --j) {
+            if (dp[j - a] != INF) {
+                dp[j] = min(dp[j], dp[j - a] + 1);
+            }
+        }
+    }
+    // S を作るための最小要素数が K 以下であれば作れる
+    return dp[S] &lt;= K;
+}</code></pre>
+        </details>
+
+        <details class="snippet-details">
+            <summary>
+                【応用】選ぶ要素数が「ちょうど」 K 個の部分和問題
+            </summary>
+            <pre><code class="hljs language-c++">// 使う要素数を「ちょうど」 K 個に制限した部分和問題 (O(NSK))
+// dp[i][k] : 和 i をちょうど k 個の要素で作れるかどうかの真偽値
+bool subset_sum_exact_k_items(const vector&lt;ll&gt;&amp; A, ll S, int K) {
+    // 2次元配列で管理
+    vector&lt;vector&lt;bool&gt;&gt; dp(S + 1, vector&lt;bool&gt;(K + 1, false));
+    dp[0][0] = true;
+
+    for (ll a : A) {
+        // 同じ要素を複数回使わないため、和も個数も後ろから更新
+        for (ll i = S; i &gt;= a; --i) {
+            for (int k = K; k &gt;= 1; --k) {
+                if (dp[i - a][k - 1]) {
+                    dp[i][k] = true;
+                }
+            }
+        }
+    }
+    // 和 S をちょうど K 個で作れるか
+    return dp[S][K];
+}</code></pre>
+        </details>
+
+        <details class="snippet-details">
+            <summary>
+                【応用】要素の総和が抑えられた場合の高速化 (O(S √S))
+            </summary>
+            <pre><code class="hljs language-c++">// 与えられる要素群 A の中に同じ数値が大量に含まれており、
+// かつ A の要素の総和が S 付近である場合に極めて有効
+vector&lt;bool&gt; subset_sum_bounded_total(const vector&lt;ll&gt;&amp; A, ll S) {
+    map&lt;ll, ll&gt; counts;
+    for (ll a : A) {
+        if (a &lt;= S) counts[a]++;
+    }
+
+    vector&lt;ll&gt; w_01;
+    for (auto&amp; p : counts) {
+        ll val = p.first;
+        ll rem = p.second;
+        // 個数制限付きナップサック問題のダブリングテクニック
+        for (ll k = 1; rem &gt; 0; k &lt;&lt;= 1) {
+            ll take = min(k, rem);
+            w_01.push_back(val * take);
+            rem -= take;
+        }
+    }
+
+    vector&lt;bool&gt; dp(S + 1, false);
+    dp[0] = true;
+    for (ll w : w_01) {
+        for (ll i = S; i &gt;= w; --i) {
+            if (dp[i - w]) dp[i] = true;
+        }
+    }
+    return dp;
+}
+
+// ----------------------
+// 使い方
+// ----------------------
+/*
+ll S = 15;
+vector&lt;ll&gt; A = {1, 1, 1, 1, 1, 2, 2, 3, 3}; 
+
+vector&lt;bool&gt; dp = subset_sum_bounded_total(A, S);
+ll target = 10;
+if (target &lt;= S &amp;&amp; dp[target]) cout &lt;&lt; "Yes" &lt;&lt; endl;
+*/</code></pre>
+        </details>
+
+        <details class="snippet-details">
+            <summary>
+                【応用】bitset でさらなる定数倍高速化 (O(S √S / 64))
+            </summary>
+            <pre><code class="hljs language-c++">// 部分和問題は std::bitset を用いると劇的に定数倍高速化できます。
+// ※定数 S_MAX がコンパイル時に決まっている（マクロ等で定義されている）必要があります。
+
+/*
+const int S_MAX = 100005;
+
+// DP更新部分を以下に置き換える (O(NS/64) または O(S√S/64))
+bitset&lt;S_MAX&gt; dp;
+dp[0] = 1;
+
+// 通常の部分和なら A、ダブリング済みなら w_01 を回す
+for (ll w : A) { 
+    // 現在作れる状態をまるごと左シフトして OR を取るだけ
+    dp |= (dp &lt;&lt; w);
+}
+
+// 判定時は dp[target] が 1 かどうかを見る
+*/</code></pre>
+        </details>
+
+
+        
+    </div>
+</div>
 
                 </section>
 
