@@ -18595,6 +18595,11 @@ cout &lt;&lt; ans.val() &lt;&lt; endl; // 出力: 6 (0-1の選び方3通り × 1
                                 >
                             </li>
                             <li>
+                                <a href="#sliding-window-sum-k"
+                                    >和が K となる連続部分列の数え上げ</a
+                                >
+                            </li>
+                            <li>
                                 <a href="#intervals-scheduling"
                                     >区間スケジューリング</a
                                 >
@@ -18811,6 +18816,112 @@ for (ll right = 0; right &lt; n; ++right) {
                                     が必要かどうか）を間違えないようにする。
                                 </li>
                             </ul>
+                        </div>
+                    </div>
+
+<div class="function-note" id="sliding-window-sum-k">
+                        <div class="function-header">
+                            <h3 class="function-name">尺取法：和が K となる連続部分列の数え上げ</h3>
+                            <p class="function-purpose">
+                                <span class="label">用途:</span>
+                                要素がすべて非負（0以上）の配列において、条件を満たす区間の個数を O(N) で求める
+                            </p>
+                        </div>
+                        <p>
+                            <strong>計算量:</strong> O(N)。
+                            <strong style="color: #d9534f;">注意: 配列に負の数が含まれる場合は使えません。</strong>
+                            区間に 0 が含まれるケースにも安全に対応するため、「和が K 以下になる個数」から「和が K-1 以下になる個数」を引く実装にしています。
+                        </p>
+
+                        <div
+                            class="code-block"
+                            data-custom-lines="true"
+                            aria-label="Code block"
+                        >
+                            <div class="code-toolbar">
+                                <span class="lang-label" aria-hidden="true"
+                                    >C++</span
+                                >
+                                <button
+                                    class="copy-btn"
+                                    type="button"
+                                    aria-label="Copy code"
+                                >
+                                    Copy
+                                </button>
+                            </div>
+                            <div class="code-wrap">
+                                <pre><code class="hljs language-c++" spellcheck="false">// 和が K となる連続部分列の個数を尺取法で求める関数
+// ※ Aの要素はすべて 0 以上である必要があります
+ll countSubarraysWithExactSumK(const vector&lt;ll&gt;&amp; A, ll K) {
+    // 補助関数：和が limit 以下の連続部分列の個数を数える
+    auto countAtMost = [&amp;](ll limit) -&gt; ll {
+        if (limit &lt; 0) return 0;
+        
+        ll res = 0;
+        ll right = 0;
+        ll sum = 0;
+        
+        for (ll left = 0; left &lt; A.size(); ++left) {
+            // right を進めても条件を満たす間、right を伸ばす
+            while (right &lt; A.size() &amp;&amp; sum + A[right] &lt;= limit) {
+                sum += A[right];
+                ++right;
+            }
+            
+            // この時点で [left, right) が確定
+            res += (right - left);
+            
+            // 次の left のループに向けて状態を更新
+            if (right == left) {
+                ++right; // 区間が空の場合は right も一緒に進める
+            } else {
+                sum -= A[left]; // 左端の要素を除外
+            }
+        }
+        return res;
+    };
+
+    // 「和が K 以下」の個数から「和が K-1 以下」の個数を引くことで「ちょうど K」を求める
+    return countAtMost(K) - countAtMost(K - 1);
+}</code></pre>
+                            </div>
+                        </div>
+
+                        <div
+                            class="template-collection"
+                            style="margin-top: 15px"
+                        >
+                            <h4
+                                style="
+                                    margin-bottom: 5px;
+                                    font-size: 0.95em;
+                                    color: #555;
+                                "
+                            >
+                                ▼ 使い方と応用パターン
+                            </h4>
+
+                            <details class="snippet-details">
+                                <summary>
+                                    基本の使い方（配列の宣言と関数の呼び出し）
+                                </summary>
+                                <pre><code class="hljs language-c++">ll N = 6, K = 3;
+// 要素は 0 以上であること！
+vector&lt;ll&gt; A = {1, 2, 0, 1, 1, 1};
+
+// 和が 3 になる連続部分列の個数を求める
+// 該当する区間:
+// [1, 2] (1+2=3)
+// [1, 2, 0] (1+2+0=3)
+// [2, 0, 1] (2+0+1=3)
+// [0, 1, 1, 1] (0+1+1+1=3)
+// [1, 1, 1] (1+1+1=3)
+// 合計 5 つ
+
+ll ans = countSubarraysWithExactSumK(A, K);
+cout &lt;&lt; "和が " &lt;&lt; K &lt;&lt; " となる部分列の数: " &lt;&lt; ans &lt;&lt; endl; // 出力: 5</code></pre>
+                            </details>
                         </div>
                     </div>
 
